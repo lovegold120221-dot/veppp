@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "624269487594",
+    "firebase_url": "https://eburon-app-default-rtdb.firebaseio.com",
+    "project_id": "eburon-app",
+    "storage_bucket": "eburon-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:624269487594:android:0533f8de6dafef1c2e9693",
+        "android_client_info": {
+          "package_name": "vep.eburon.ai"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "624269487594-qnd3sr7enqst22pclbe3n3c4941kggrg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "vep.eburon.ai",
+            "certificate_hash": "9bbb3186b2189ef16d8f272bdab59362c395cbb4"
+          }
+        },
+        {
+          "client_id": "624269487594-qcgft28pdn7rdlibpjjjcrc616dg26lq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAomPxdTY4bIEyujY4NazHnR7CRgAy5QRw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "106423315471931093758",
+              "client_type": 3
+            },
+            {
+              "client_id": "624269487594-3dlg2m0akvjjs4mgenrv8d5j0n1u23pj.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "vep.eburon.ai"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
