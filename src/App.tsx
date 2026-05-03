@@ -980,7 +980,7 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
     const userMsg = {
       role: 'user' as const,
       source: 'user' as const,
-      speaker: settings.userName || 'BOSS',
+      speaker: settings.userName ? settings.userName.split(' ')[0] : 'BOSS',
       text: text.trim(),
       timestamp: Date.now()
     };
@@ -1071,7 +1071,7 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
       set(msgRef, {
         role,
         source: role === 'model' ? 'assistant' : 'user',
-        speaker: role === 'model' ? (settings.personaName || 'BEATRICE') : (settings.userName || 'BOSS'),
+        speaker: role === 'model' ? (settings.personaName || 'BEATRICE') : (settings.userName ? settings.userName.split(' ')[0] : 'BOSS'),
         text: text.trim(),
         timestamp: Date.now()
       });
@@ -1123,7 +1123,7 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   const getSpeakerTag = (role: SpeakerRole) => (
     role === 'model'
       ? (settings.personaName || 'BEATRICE').toString().toUpperCase()
-      : (settings.userName || 'BOSS').toString().toUpperCase()
+      : (settings.userName ? settings.userName.split(' ')[0] : 'BOSS').toString().toUpperCase()
   );
 
   // STRICT non-hallucination directive. Sent to the model alongside any uploaded
@@ -1256,7 +1256,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
       const fileMsg: ChatMessage = {
         role: 'user',
         source: 'user',
-        speaker: settings.userName || 'BOSS',
+        speaker: settings.userName ? settings.userName.split(' ')[0] : 'BOSS',
         text: previewable ? `📎 ${file.name}` : `📎 ${file.name}`,
         fileUrl: previewable ? dataUrl : undefined,
         fileType: file.type,
@@ -1382,12 +1382,12 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                const recentMsgs = historyMsgs.slice(-8);
                if (recentMsgs.length > 0) {
                  const summary = recentMsgs
-                   .map(m => `${m.role === 'model' ? (settings.personaName || 'BEATRICE').toUpperCase() : (settings.userName || 'BOSS').toUpperCase()}: ${m.text}`)
+                   .map(m => `${m.role === 'model' ? (settings.personaName || 'BEATRICE').toUpperCase() : (settings.userName ? settings.userName.split(' ')[0] : 'BOSS').toUpperCase()}: ${m.text}`)
                    .join('\n');
                  const recapPrompt =
                    `[NEW SESSION — RECAP PREVIOUS CONVERSATION]\n` +
                    `Last time we spoke, this is what was said (most recent at the bottom):\n\n${summary}\n\n` +
-                   `Greet ${settings.userName ? 'Boss ' + settings.userName : 'Boss'} naturally and briefly mention where we left off ` +
+                   `Greet ${settings.userName ? 'Boss ' + settings.userName.split(' ')[0] : 'Boss'} naturally and briefly mention where we left off ` +
                    `before asking what's next. Keep it short — one or two sentences. Don't list everything; just acknowledge ` +
                    `the most recent topic. Example tone: "Welcome back, Boss. We were just on [topic] — want to keep going?"`;
                  sessionRef.current?.sendMessage?.({ text: recapPrompt });
@@ -2361,7 +2361,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                                   const fileMsg = {
                                     role: 'user' as const,
                                     source: 'user' as const,
-                                    speaker: settings.userName || 'BOSS',
+                                    speaker: settings.userName ? settings.userName.split(' ')[0] : 'BOSS',
                                     text: `📚 Knowledge Base: ${file.name}`,
                                     fileUrl,
                                     fileType: file.type,
@@ -2616,7 +2616,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                   const newMsg = {
                     role: 'user' as const,
                     source: 'user' as const,
-                    speaker: settings.userName || 'BOSS',
+                    speaker: settings.userName ? settings.userName.split(' ')[0] : 'BOSS',
                     text: userText,
                     timestamp: Date.now()
                   };
