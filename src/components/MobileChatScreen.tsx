@@ -53,6 +53,8 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const isListeningRef = useRef(false);
 
   // Transcription functions
   const showLiveTranscript = (role: 'user' | 'model', text: string, finished = false) => {
@@ -86,17 +88,81 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
     }
   };
 
-  const startSession = () => {
+  const startSession = async () => {
     setIsInSession(true);
-    // In a real implementation, this would start the voice session
-    // For demo purposes, simulate some transcriptions
-    setTimeout(() => {
-      showLiveTranscript('model', "I'm here and ready to help, Boss.", false);
-    }, 1000);
+    
+    // Initialize speech recognition
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
+      
+      recognitionRef.current.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        // Show live transcription
+        if (interimTranscript) {
+          showLiveTranscript('user', interimTranscript, false);
+        }
+        
+        if (finalTranscript) {
+          showLiveTranscript('user', finalTranscript, true);
+          // Simulate AI response
+          setTimeout(() => {
+            showLiveTranscript('model', "I hear you, Boss. Let me help with that.", true);
+          }, 1500);
+        }
+      };
+      
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error === 'no-speech') {
+          showLiveTranscript('model', "I'm listening, Boss...", false);
+        }
+      };
+      
+      recognitionRef.current.onend = () => {
+        if (isListeningRef.current) {
+          // Restart if we're still in session
+          recognitionRef.current?.start();
+        }
+      };
+      
+      isListeningRef.current = true;
+      recognitionRef.current.start();
+      
+      // Show initial AI message
+      setTimeout(() => {
+        showLiveTranscript('model', "I'm listening, Boss...", false);
+      }, 500);
+    } else {
+      // Fallback for browsers without speech recognition
+      showLiveTranscript('model', "Speech recognition not available in this browser.", true);
+    }
   };
 
   const stopSession = () => {
     setIsInSession(false);
+    isListeningRef.current = false;
+    
+    // Stop speech recognition
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    
     setCurrentTranscript(null);
     if (transcriptTimeoutRef.current) {
       clearTimeout(transcriptTimeoutRef.current);
@@ -253,8 +319,8 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
           )}
         </AnimatePresence>
 
-        {/* Transcription Overlay - Always visible in chatbox during session */}
-        {isInSession && currentTranscript && (
+        {/* Transcription Overlay - Show whenever there's a transcript */}
+        {currentTranscript && (
           <div className="absolute top-4 left-4 right-4 z-20">
             <AnimatePresence>
               <motion.div
