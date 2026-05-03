@@ -130,7 +130,8 @@ export class MemoryCommandProcessor {
           context: await this.getCurrentContext(),
           importance,
           tags,
-          isPersonality,
+          relatedMemories: [],
+          isPersonalityMemory: isPersonality,
         });
         memoriesSaved.push(`Long-term memory: ${memoryType}`);
       }
@@ -450,14 +451,7 @@ export class MemoryCommandProcessor {
     const lowerContent = content.toLowerCase();
     
     // Check if it's about preferences, communication style, or personal traits
-    return /(
-      prefer|like|dislike|hate|enjoy|
-      talk|communicate|respond|
-      formal|casual|professional|
-      quick|slow|detailed|brief|
-      humor|serious|warm|cold|
-      always|usually|never|sometimes
-    )/.test(lowerContent);
+    return /(prefer|like|dislike|hate|enjoy|talk|communicate|respond|formal|casual|professional|quick|slow|detailed|brief|humor|serious|warm|cold|always|usually|sometimes)/.test(lowerContent);
   }
 
   private extractTitle(content: string): string {

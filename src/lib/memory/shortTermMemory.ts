@@ -395,7 +395,7 @@ export class ShortTermMemoryManager {
   // Simple entity extraction
   private extractEntities(text: string): string[] {
     // Basic pattern for capitalized words (potential entities)
-    const entities = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
+    const entities = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) as string[] || [];
     return entities.filter(entity => 
       entity.length > 2 && 
       !['I', 'You', 'We', 'They', 'It', 'He', 'She'].includes(entity)
