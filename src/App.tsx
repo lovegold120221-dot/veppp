@@ -2049,17 +2049,6 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
             </div>
           </div>
 
-          {/* Center: Status Badge */}
-          <div className="absolute left-1/2 -translate-x-1/2">
-            {(isAgentSpeaking || connecting) && (
-              <span
-                className="rounded-full border border-lime-300/45 bg-lime-400/10 px-3.5 py-1 text-[10px] font-bold uppercase tracking-[0.24em] text-lime-300 shadow-[0_0_24px_rgba(163,230,53,0.12)]"
-              >
-                {connecting ? 'Connecting...' : 'Speaking...'}
-              </span>
-            )}
-          </div>
-
           {/* Right: Controls */}
           <div className="flex items-center gap-3">
             {/* Caption Toggle - Show/hide streaming transcription */}
