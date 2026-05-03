@@ -1025,6 +1025,58 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
       backgroundAudioRef.current.currentTime = 0;
     }
   };
+
+  // Connection chime audio - plays when AI is fully connected and alive
+  const chimeAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Initialize connection chime
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Create a subtle chime using Web Audio API for better control
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      const playChime = () => {
+        try {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          // Subtle chime: sine wave, C6 note (1046.5 Hz)
+          oscillator.type = 'sine';
+          oscillator.frequency.setValueAtTime(1046.5, audioContext.currentTime);
+          
+          // Quick fade in and out for subtle effect
+          gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+          gainNode.gain.linearRampToValueAtTime(0.15, audioContext.currentTime + 0.05);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.4);
+          
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.4);
+        } catch (e) {
+          console.log('Chime play failed:', e);
+        }
+      };
+      
+      // Store the play function
+      (chimeAudioRef as any).current = { play: playChime };
+    }
+    
+    return () => {
+      if (chimeAudioRef.current && 'play' in chimeAudioRef.current === false) {
+        // Cleanup if needed
+      }
+    };
+  }, []);
+
+  // Play connection chime
+  const playConnectionChime = () => {
+    if ((chimeAudioRef as any).current?.play) {
+      (chimeAudioRef as any).current.play();
+    }
+  };
+
   const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null);
   const [settings, setSettings] = useState(initialSettings || { personaName: 'Beatrice', userName: 'Jo Lernout', systemPrompt: getSystemInstruction('Beatrice', 'Jo Lernout', 'English'), avatarUrl: '', selectedVoice: 'Aoede', language: 'English' });
 
@@ -1419,7 +1471,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction: getSystemInstruction(settings.personaName || 'Beatrice', settings.userName || 'Jo Lernout', settings.language || 'English') + "\n\n" + (settings.personality || '') + "\n\n" + BIBLE_PERSONALITY + "\n\n" + historyContext,
+          systemInstruction: BIBLE_PERSONALITY + "\n\n" + getSystemInstruction(settings.personaName || 'Beatrice', settings.userName || 'Jo Lernout', settings.language || 'English') + "\n\n" + (settings.personality || '') + "\n\n" + historyContext + "\n\n[CRITICAL: BE BRIEF AND DIRECT]\nYou are a high-performance employee. Be concise, natural, and efficient. Don't over-explain. One or two sentences max for simple responses. Only elaborate when the task requires it. Speak like a busy professional who respects their Boss's time.",
           tools: [{
             functionDeclarations: [
                {
@@ -1459,9 +1511,11 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
              // Start background audio when session opens
              playBackgroundAudio();
              
-             // AI greets — and if there's prior conversation, recaps it
-             // briefly so we always continue from where we left off, like a
-             // real employee picking up a conversation again.
+             // Play connection chime to signal AI is alive and ready
+             playConnectionChime();
+             
+             // AI speaks first — brief, natural greeting
+             // Slight delay to let chime play first (300ms), then AI speaks
              setTimeout(() => {
                const recentMsgs = historyMsgs.slice(-8);
                if (recentMsgs.length > 0) {
@@ -1472,10 +1526,11 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                    `[NEW SESSION — RECAP PREVIOUS CONVERSATION]\n` +
                    `Last time we spoke, this is what was said (most recent at the bottom):\n\n${summary}\n\n` +
                    `Greet ${settings.userName ? 'Boss ' + settings.userName.split(' ')[0] : 'Boss'} naturally and briefly mention where we left off ` +
-                   `before asking what's next. Keep it short — one or two sentences. Don't list everything; just acknowledge ` +
-                   `the most recent topic. Example tone: "Welcome back, Boss. We were just on [topic] — want to keep going?"`;
+                   `before asking what's next. Keep it very short — one sentence max. Be brief and natural. ` +
+                   `Example: "Welcome back, Boss. We were just on [topic] — want to keep going?"`;
                  sessionRef.current?.sendMessage?.({ text: recapPrompt });
                } else {
+                 // Fresh session — AI speaks first with brief greeting
                  const greetings = [
                    "Hey Boss.",
                    "Morning Boss.",
@@ -1486,7 +1541,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                  const greeting = greetings[Math.floor(Math.random() * greetings.length)];
                  sessionRef.current?.sendMessage?.({ text: greeting });
                }
-             }, 600);
+             }, 300);
 
              // Silence detection - check every 5 seconds
              silenceCheckRef.current = setInterval(() => {
