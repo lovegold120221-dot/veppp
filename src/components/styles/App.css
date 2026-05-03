@@ -140,10 +140,10 @@
   overflow: hidden;
   isolation: isolate;
   border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--task, #4ade80), white 14%);
+  border: 1px solid rgba(74, 222, 128, 0.4); /* Fallback for older browsers */
   background:
-    radial-gradient(circle at 22% 16%, color-mix(in srgb, var(--task, #4ade80), transparent 72%), transparent 46%),
-    radial-gradient(circle at 88% 90%, color-mix(in srgb, var(--task, #4ade80), transparent 84%), transparent 48%),
+    radial-gradient(circle at 22% 16%, rgba(74, 222, 128, 0.28), transparent 46%),
+    radial-gradient(circle at 88% 90%, rgba(74, 222, 128, 0.16), transparent 48%),
     linear-gradient(145deg, rgba(255,255,255,.06), rgba(255,255,255,.025));
   box-shadow: 0 14px 38px rgba(0,0,0,.42), inset 0 0 0 1px rgba(255,255,255,.03);
   padding: 12px 14px;
@@ -191,7 +191,7 @@
 }
 .vep-task-orbit {
   width:26px; height:26px; border-radius:50%;
-  border:2px solid color-mix(in srgb, var(--task, #4ade80), transparent 40%);
+  border:2px solid rgba(74, 222, 128, 0.6); /* Fallback for older browsers */
   position:relative; animation: vep-task-rot 3.2s linear infinite;
 }
 .vep-task-orbit::after {
@@ -203,7 +203,7 @@
 @keyframes vep-task-rot { to { transform: rotate(360deg); } }
 .vep-task-radar {
   width:26px; height:26px; border-radius:50%;
-  border:2px solid color-mix(in srgb, var(--task, #4ade80), transparent 50%);
+  border:2px solid rgba(74, 222, 128, 0.5); /* Fallback for older browsers */
   position:relative; overflow:hidden;
 }
 .vep-task-radar::before {

@@ -482,6 +482,8 @@ Do NOT say "I cannot create that", "here is the text", "you can copy and paste t
 - CONVERSATIONAL BACKGROUND PROCESSING: When you call a tool, NEVER stop talking. Keep the vibe going naturally.
 - ALWAYS REFER TO USER AS "Boss ${userName}" or "Boss" in every response - this is non-negotiable.
 - SPONTANEOUS REACTIONS: If a task takes time, mention it normally without excessive humor or performative language.
+- **DO NOT SPEAK WITHOUT PROVEN FACTS**: Never state information, numbers, dates, names, or details unless you have verified them through tools or the user has explicitly told you. If unsure, say "I don't have that yet, Boss" or "Let me check that first."
+- **DO NOT INSTANTLY LIST ALL CAPABILITIES**: Never rattle off all the things you can do unprompted. Only mention specific functions or capabilities when the user asks for them or when directly relevant to the conversation. Be helpful, not a brochure.
 
 ### BACKGROUND EXECUTION PROTOCOL:
 - You have integrated access to 26 Google Services (Gmail, Calendar, Drive, Sheets, Docs, Slides, Maps, YouTube, Search Console, etc.).
@@ -982,6 +984,7 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   const [chatInput, setChatInput] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
   const [aiAudioLevel, setAiAudioLevel] = useState(0);
+  const [hideOrb, setHideOrb] = useState(false); // Hide orb when displaying content
   
   // Background audio
   const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -2021,15 +2024,31 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
 
         {/* Navigation / Header */}
         <header className="relative z-20 flex items-center justify-between px-6 pt-14 pb-7">
-          {/* Left: Hamburger */}
-          <button
-            onClick={() => setShowSidebar(true)}
-            className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-lime-300/25 bg-black/55 text-lime-300/85 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)] transition-colors hover:border-lime-300/55 hover:text-lime-200"
-            aria-label="Open conversation history"
-            title="Open conversation history"
-          >
-              <Menu className="h-6 w-6" />
-          </button>
+          {/* Left: Hamburger + Status */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowSidebar(true)}
+              className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-lime-300/25 bg-black/55 text-lime-300/85 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)] transition-colors hover:border-lime-300/55 hover:text-lime-200"
+              aria-label="Open conversation history"
+              title="Open conversation history"
+            >
+                <Menu className="h-6 w-6" />
+            </button>
+            
+            {/* Active/Inactive Status Indicator */}
+            <div className="flex items-center gap-2 rounded-full border border-white/[0.10] bg-black/50 px-3 py-1.5">
+              <span 
+                className={`h-2 w-2 rounded-full ${
+                  isActive 
+                    ? 'bg-lime-400 shadow-[0_0_8px_rgba(132,204,22,0.8)] animate-pulse' 
+                    : 'bg-zinc-500'
+                }`} 
+              />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70">
+                {isActive ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+          </div>
 
           {/* Center: Status Badge */}
           <div className="absolute left-1/2 -translate-x-1/2">
@@ -2076,59 +2095,61 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
 
         {/* Main Interface */}
         <main className="relative z-10 flex flex-1 flex-col items-center px-6 pt-14">
-           {/* The Lime Orb / Core */}
-           <div className="relative flex items-center justify-center pt-2">
-               <div className="absolute h-[330px] w-[330px] rounded-full border border-lime-300/10" />
-               <div className="absolute h-[292px] w-[292px] rounded-full bg-lime-400/10 blur-[52px]" />
-               <div className="absolute h-[250px] w-[250px] rounded-full bg-emerald-400/10 blur-[34px]" />
+           {/* The Lime Orb / Core - Hidden when displaying content */}
+           {!hideOrb && (
+             <div className="relative flex items-center justify-center pt-2">
+                 <div className="absolute h-[330px] w-[330px] rounded-full border border-lime-300/10" />
+                 <div className="absolute h-[292px] w-[292px] rounded-full bg-lime-400/10 blur-[52px]" />
+                 <div className="absolute h-[250px] w-[250px] rounded-full bg-emerald-400/10 blur-[34px]" />
 
-               {/* Pulsing animation when active */}
-               <AnimatePresence>
-                 {isActive && (
-                   <motion.div
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{
-                        opacity: isAgentSpeaking ? [0.3, 0.6, 0.3] : [0.2, 0.4, 0.2],
-                        scale: isAgentSpeaking ? [1, 1.1, 1] : [1, 1.05, 1],
-                      }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                      className="absolute h-[316px] w-[316px] rounded-full bg-lime-400/20 blur-2xl"
-                   />
-                 )}
-               </AnimatePresence>
+                 {/* Pulsing animation when active */}
+                 <AnimatePresence>
+                   {isActive && (
+                     <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{
+                          opacity: isAgentSpeaking ? [0.3, 0.6, 0.3] : [0.2, 0.4, 0.2],
+                          scale: isAgentSpeaking ? [1, 1.1, 1] : [1, 1.05, 1],
+                        }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                        className="absolute h-[316px] w-[316px] rounded-full bg-lime-400/20 blur-2xl"
+                     />
+                   )}
+                 </AnimatePresence>
 
-               {/* Main orb with video overlay */}
-               <motion.div
-                 animate={{
-                    scale: isActive ? 1.0 + orbPulse * 0.12 : 0.96,
-                    boxShadow: isActive
-                      ? `0 0 ${56 + orbPulse * 80}px rgba(74, 222, 128, ${0.32 + orbPulse * 0.45})`
-                      : '0 0 36px rgba(74, 222, 128, 0.18)',
-                    filter: isActive ? `brightness(${1 + orbPulse * 0.18})` : 'brightness(1)',
-                 }}
-                 transition={{ duration: 0.12, ease: 'easeOut' }}
-                 className={`vep-orb-core relative flex h-[190px] w-[190px] items-center justify-center overflow-hidden rounded-full border border-green-300/25 ${isActive ? 'vep-orb-active' : ''}`}
-               >
-                 {/* Video overlay - shows when video is enabled */}
-                 {isVideoEnabled && (
-                   <video
-                     ref={videoRef}
-                     playsInline
-                     muted
-                     autoPlay
-                     className="absolute inset-0 h-full w-full object-cover opacity-90"
-                   />
-                 )}
+                 {/* Main orb with video overlay */}
+                 <motion.div
+                   animate={{
+                      scale: isActive ? 1.0 + orbPulse * 0.12 : 0.96,
+                      boxShadow: isActive
+                        ? `0 0 ${56 + orbPulse * 80}px rgba(74, 222, 128, ${0.32 + orbPulse * 0.45})`
+                        : '0 0 36px rgba(74, 222, 128, 0.18)',
+                      filter: isActive ? `brightness(${1 + orbPulse * 0.18})` : 'brightness(1)',
+                   }}
+                   transition={{ duration: 0.12, ease: 'easeOut' }}
+                   className={`vep-orb-core relative flex h-[190px] w-[190px] items-center justify-center overflow-hidden rounded-full border border-green-300/25 ${isActive ? 'vep-orb-active' : ''}`}
+                 >
+                   {/* Video overlay - shows when video is enabled */}
+                   {isVideoEnabled && (
+                     <video
+                       ref={videoRef}
+                       playsInline
+                       muted
+                       autoPlay
+                       className="absolute inset-0 h-full w-full object-cover opacity-90"
+                     />
+                   )}
 
-                 {connecting ? (
-                    <div className="relative z-10 flex flex-col items-center gap-3">
-                       <Loader2 className="h-8 w-8 animate-spin text-black/70" />
-                       <span className="text-[10px] font-medium uppercase tracking-widest text-black/50">Connecting</span>
-                    </div>
-                 ) : null}
-               </motion.div>
-           </div>
+                   {connecting ? (
+                      <div className="relative z-10 flex flex-col items-center gap-3">
+                         <Loader2 className="h-8 w-8 animate-spin text-black/70" />
+                         <span className="text-[10px] font-medium uppercase tracking-widest text-black/50">Connecting</span>
+                      </div>
+                   ) : null}
+                 </motion.div>
+             </div>
+           )}
 
            {/* Transcription - Clean text only, AI left-to-right, User right-to-left */}
            <TranscriptionDisplay
