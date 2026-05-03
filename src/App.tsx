@@ -658,7 +658,6 @@ export default function App() {
       provider.addScope('https://www.googleapis.com/auth/analytics.readonly');
       provider.addScope('https://www.googleapis.com/auth/analytics');
       provider.addScope('https://www.googleapis.com/auth/cloud-platform');
-      provider.addScope('https://www.googleapis.com/auth/cloud-projects');
       provider.addScope('https://www.googleapis.com/auth/cloud-billing');
       provider.addScope('https://www.googleapis.com/auth/firebase');
       provider.addScope('https://www.googleapis.com/auth/sqlservice');
@@ -673,8 +672,6 @@ export default function App() {
       provider.addScope('https://www.googleapis.com/auth/devstorage.full_control');
       provider.addScope('https://www.googleapis.com/auth/fitness.activity.read');
       provider.addScope('https://www.googleapis.com/auth/fitness.body.read');
-      provider.addScope('https://www.googleapis.com/auth/maps');
-      provider.addScope('https://www.googleapis.com/auth/streetviewimage');
       provider.addScope('https://www.googleapis.com/auth/photoslibrary');
       provider.addScope('https://www.googleapis.com/auth/photoslibrary.readonly');
       provider.addScope('https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata');
