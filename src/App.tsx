@@ -960,16 +960,16 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
     lastActivityRef.current = Date.now();
   };
   
-  // Silence fillers - AI speaks when user is silent
+  // Silence fillers - AI speaks when user is silent (natural employee style)
   const silenceFillers = [
-    "Hey Boss, you still there?",
-    "What's up Boss?",
-    "Yeah? I'm listening.",
-    "You got quiet on me. Everything okay?",
-    "Uh-oh, are you sleeping Boss?",
-    "Hey Boss, I'm still here.",
-    "Maybe you're already done?",
-    "Alright, I'll just stay here. Give me a call when you're ready to talk."
+    "Boss? You still there?",
+    "Hmm... what's on your mind, Boss?",
+    "Yeah, I'm listening...",
+    "You went quiet on me. Everything okay?",
+    "Uh... Boss? You still with me?",
+    "Hey, I'm still here if you need me.",
+    "Maybe you're thinking? Take your time.",
+    "Alright, I'll just wait here. Let me know when you're ready."
   ];
   
   // Send chat message to AI session
@@ -1416,25 +1416,34 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                }
              }, 5000);
 
-             // Silence fillers - AI speaks at 8, 15, 22 seconds of silence
+             // Silence fillers - AI speaks at 8s, 20s, 35s, and 50s of silence
              let fillerIndex = 0;
              silenceFillerRef.current = setInterval(() => {
                const silentTime = Date.now() - lastActivityRef.current;
                
-               // Spread fillers across the 60-second window so the agent
-               // doesn't pester the user. Targets: ~15s, ~30s, ~45s.
-               if (silentTime > 15000 && silentTime < 19000 && fillerIndex === 0) {
-                 const filler = silenceFillers[Math.floor(Math.random() * 3)]; // First 3 fillers
+               // Early check-in at 8 seconds (quick, gentle)
+               if (silentTime > 8000 && silentTime < 12000 && fillerIndex === 0) {
+                 const filler = silenceFillers[0]; // "Boss? You still there?"
                  sessionRef.current?.sendMessage?.({ text: filler });
                  fillerIndex = 1;
-               } else if (silentTime > 30000 && silentTime < 34000 && fillerIndex <= 1) {
-                 const filler = silenceFillers[3 + Math.floor(Math.random() * 3)]; // Middle fillers
+               }
+               // Second check-in at 20 seconds (more thoughtful)
+               else if (silentTime > 20000 && silentTime < 24000 && fillerIndex === 1) {
+                 const filler = silenceFillers[1 + Math.floor(Math.random() * 2)]; // "Hmm... what's on your mind, Boss?" or "Yeah, I'm listening..."
                  sessionRef.current?.sendMessage?.({ text: filler });
                  fillerIndex = 2;
-               } else if (silentTime > 45000 && silentTime < 49000 && fillerIndex <= 2) {
-                 const filler = silenceFillers[6 + Math.floor(Math.random() * 2)]; // Last fillers
+               }
+               // Third check-in at 35 seconds (concerned but patient)
+               else if (silentTime > 35000 && silentTime < 39000 && fillerIndex === 2) {
+                 const filler = silenceFillers[3 + Math.floor(Math.random() * 2)]; // "You went quiet on me. Everything okay?" or "Uh... Boss? You still with me?"
                  sessionRef.current?.sendMessage?.({ text: filler });
                  fillerIndex = 3;
+               }
+               // Final check-in at 50 seconds (respectful, giving space)
+               else if (silentTime > 50000 && silentTime < 54000 && fillerIndex === 3) {
+                 const filler = silenceFillers[5 + Math.floor(Math.random() * 2)]; // "Hey, I'm still here if you need me." or "Maybe you're thinking? Take your time."
+                 sessionRef.current?.sendMessage?.({ text: filler });
+                 fillerIndex = 4;
                }
              }, 3000);
 
