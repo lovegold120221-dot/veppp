@@ -3,7 +3,14 @@
     "allow": [
       "Exec(npx tsc)",
       "Exec(ls)",
-      "Exec(git init)"
+      "Exec(git init)",
+      "Exec(head)",
+      "Exec(git commit)",
+      "Exec(git remote)",
+      "Exec(git pull)",
+      "Exec(cat)",
+      "Exec(git add)",
+      "Exec(python3)"
     ]
   }
 }

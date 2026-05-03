@@ -57,7 +57,8 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import ArtifactPreview, { ArtifactData, ArtifactType } from './components/ArtifactPreview';
-import ZapierMcpPanel from './components/ZapierMcpPanel';
+import AdminPanel from './components/AdminPanel';
+import HtmlLiveView, { extractHtml } from './components/HtmlLiveView';
 import './components/styles/App.css';
 
 type SpeakerRole = 'user' | 'model';
@@ -939,11 +940,12 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
   const [aiAudioLevel, setAiAudioLevel] = useState(0);
   const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null);
-  const [settings, setSettings] = useState(initialSettings || { personaName: 'Beatrice', userName: 'Jo Lernout', systemPrompt: getSystemInstruction('Beatrice', 'Jo Lernout', 'English'), avatarUrl: '', voice: 'Puck', language: 'English' });
+  const [settings, setSettings] = useState(initialSettings || { personaName: 'Beatrice', userName: 'Jo Lernout', systemPrompt: getSystemInstruction('Beatrice', 'Jo Lernout', 'English'), avatarUrl: '', selectedVoice: 'Aoede', language: 'English' });
 
   const aiRef = useRef<GoogleGenAI | null>(null);
   const sessionRef = useRef<any>(null);
@@ -1341,11 +1343,12 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
       const sessionPromise = aiRef.current.live.connect({
         model: "gemini-3.1-flash-live-preview",
         config: {
-          generationConfig: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.voice || "Puck" } }, // User selected voice
-            },
+          // Q3 2025+: fields moved out of `generationConfig` and live
+          // directly on `LiveConnectConfig`.
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            // Aoede is the default; users can pick another in Office Profile.
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.selectedVoice || settings.voice || 'Aoede' } },
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
@@ -1364,6 +1367,19 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                       },
                       required: ["serviceName", "action"]
                   }
+               },
+               {
+                  name: "execute_zapier_action",
+                  description: "Execute an action via Zapier's 7000+ connected apps (Slack, Notion, Trello, Salesforce, HubSpot, etc.). Requires admin configuration. This runs in the background while you continue talking with Boss.",
+                  parameters: {
+                      type: Type.OBJECT,
+                      properties: {
+                        app: { type: Type.STRING, description: "App name: e.g., 'Slack', 'Notion', 'Trello', 'Salesforce'" },
+                        action: { type: Type.STRING, description: "The action: e.g., 'Send Slack message to channel', 'Create Notion page', 'Post to Trello board'" },
+                        data: { type: Type.OBJECT, description: "Action-specific data like channel, message content, page title, etc." }
+                      },
+                      required: ["app", "action"]
+                  }
                }
             ]
           }]
@@ -1373,25 +1389,42 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
              // Reset activity timer
              recordActivity();
              
-             // AI speaks first with a brief natural greeting
+             // AI greets — and if there's prior conversation, recaps it
+             // briefly so we always continue from where we left off, like a
+             // real employee picking up a conversation again.
              setTimeout(() => {
-               const greetings = [
-                 "Hey Boss.",
-                 "Morning Boss.",
-                 "Yeah Boss?",
-                 "What's up Boss?",
-                 "I'm here Boss."
-               ];
-               const greeting = greetings[Math.floor(Math.random() * greetings.length)];
-               sessionRef.current?.sendMessage?.({ text: greeting });
-             }, 500);
+               const recentMsgs = historyMsgs.slice(-8);
+               if (recentMsgs.length > 0) {
+                 const summary = recentMsgs
+                   .map(m => `${m.role === 'model' ? (settings.personaName || 'BEATRICE').toUpperCase() : (settings.userName || 'BOSS').toUpperCase()}: ${m.text}`)
+                   .join('\n');
+                 const recapPrompt =
+                   `[NEW SESSION — RECAP PREVIOUS CONVERSATION]\n` +
+                   `Last time we spoke, this is what was said (most recent at the bottom):\n\n${summary}\n\n` +
+                   `Greet ${settings.userName ? 'Boss ' + settings.userName : 'Boss'} naturally and briefly mention where we left off ` +
+                   `before asking what's next. Keep it short — one or two sentences. Don't list everything; just acknowledge ` +
+                   `the most recent topic. Example tone: "Welcome back, Boss. We were just on [topic] — want to keep going?"`;
+                 sessionRef.current?.sendMessage?.({ text: recapPrompt });
+               } else {
+                 const greetings = [
+                   "Hey Boss.",
+                   "Morning Boss.",
+                   "Yeah Boss?",
+                   "What's up Boss?",
+                   "I'm here Boss."
+                 ];
+                 const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+                 sessionRef.current?.sendMessage?.({ text: greeting });
+               }
+             }, 600);
 
              // Silence detection - check every 5 seconds
              silenceCheckRef.current = setInterval(() => {
                const silentTime = Date.now() - lastActivityRef.current;
                
-               // Auto-stop after 30 seconds of silence
-               if (silentTime > 30000) {
+               // Auto-stop after 60 seconds of silence (gives the user
+               // plenty of room to think / step away briefly).
+               if (silentTime > 60000) {
                  stopSession();
                  return;
                }
@@ -1402,16 +1435,17 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
              silenceFillerRef.current = setInterval(() => {
                const silentTime = Date.now() - lastActivityRef.current;
                
-               // Only speak filler if user has been silent for specific times
-               if (silentTime > 8000 && silentTime < 12000 && fillerIndex === 0) {
+               // Spread fillers across the 60-second window so the agent
+               // doesn't pester the user. Targets: ~15s, ~30s, ~45s.
+               if (silentTime > 15000 && silentTime < 19000 && fillerIndex === 0) {
                  const filler = silenceFillers[Math.floor(Math.random() * 3)]; // First 3 fillers
                  sessionRef.current?.sendMessage?.({ text: filler });
                  fillerIndex = 1;
-               } else if (silentTime > 15000 && silentTime < 19000 && fillerIndex <= 1) {
+               } else if (silentTime > 30000 && silentTime < 34000 && fillerIndex <= 1) {
                  const filler = silenceFillers[3 + Math.floor(Math.random() * 3)]; // Middle fillers
                  sessionRef.current?.sendMessage?.({ text: filler });
                  fillerIndex = 2;
-               } else if (silentTime > 22000 && silentTime < 26000 && fillerIndex <= 2) {
+               } else if (silentTime > 45000 && silentTime < 49000 && fillerIndex <= 2) {
                  const filler = silenceFillers[6 + Math.floor(Math.random() * 2)]; // Last fillers
                  sessionRef.current?.sendMessage?.({ text: filler });
                  fillerIndex = 3;
@@ -1499,6 +1533,10 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
            });
            
              audioRecorderRef.current.start();
+             // Reset silence clock so the 60-second timeout doesn't fire on
+             // an old timestamp (which is what was making the session stop
+             // "instantly" after reconnecting).
+             lastActivityRef.current = Date.now();
              setIsActive(true);
              setConnecting(false);
           },
@@ -1506,77 +1544,160 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
              if (msg.toolCall) {
                 const calls = msg.toolCall.functionCalls;
                 if (calls) {
-                  const resps = [];
-                  for (const c of calls) {
-                    if (c.name === 'execute_google_service') {
-                       const { serviceName, action, ...params } = c.args as any;
-                       const tid = Math.random().toString(36).substring(7);
-                       setTasks(p => [...p, { id: tid, serviceName, action, status: 'processing' }]);
-                       
-                       // Start continuous speaking while task processes
-                       const startContinuousSpeaking = () => {
-                         const fillers = [
-                           `Alright, let me just pull up your ${serviceName}...`,
-                           `Okay, accessing your ${serviceName} now...`,
-                           `Just a second, connecting to ${serviceName}...`,
-                           `Getting that info from ${serviceName}...`,
-                           `Let me check your ${serviceName} for you...`,
-                           `Okay, pulling up those ${serviceName} records...`,
-                           `Just accessing your ${serviceName} data...`,
-                           `Almost there, just grabbing that from ${serviceName}...`
-                         ];
-                         
-                         const speakFiller = () => {
-                           if (!sessionRef.current) return;
-                           
-                           const filler = fillers[Math.floor(Math.random() * fillers.length)];
-                           sessionRef.current.sendRealtimeInput({
-                             text: filler
-                           });
-                           
-                           // Speak another filler in 3-5 seconds if task still processing
-                           setTimeout(() => {
-                             const task = tasks.find(t => t.id === tid);
-                             if (task && task.status === 'processing') {
-                               speakFiller();
-                             }
-                           }, 3000 + Math.random() * 2000);
-                         };
-                         
-                         // Start speaking immediately
-                         speakFiller();
-                       };
-                       
-                       // Start continuous speaking
-                       startContinuousSpeaking();
-                       
-                       // Execute real Google service
-                       const googleServices = GoogleServices.getInstance();
-                       googleServices.executeService(serviceName, action, params)
-                         .then(async (result) => {
-                           if (result.success) {
-                             const successResult = `Action '${action}' successfully executed on your ${serviceName} account.`;
-                             setTasks(p => p.map(t => t.id === tid ? { ...t, status: 'completed', result: successResult } : t));
-                           } else {
-                             const errorResult = `Error executing '${action}' on ${serviceName}: ${result.error}`;
-                             setTasks(p => p.map(t => t.id === tid ? { ...t, status: 'completed', result: errorResult } : t));
-                           }
-                           setTimeout(() => setTasks(p => p.filter(t => t.id !== tid)), 15000);
-                         })
-                         .catch((error) => {
-                           const errorResult = `Failed to execute ${serviceName}.${action}: ${error.message}`;
-                           setTasks(p => p.map(t => t.id === tid ? { ...t, status: 'completed', result: errorResult } : t));
-                           setTimeout(() => setTasks(p => p.filter(t => t.id !== tid)), 15000);
-                         });
+                  // Run every tool call to completion in parallel, THEN send
+                  // a single sendToolResponse with the real structured data.
+                  // Previously we replied with a placeholder before the API
+                  // call finished, so the agent never actually saw the
+                  // Gmail/Calendar/Drive results — that's the "Gmail isn't
+                  // connecting" symptom. Now the agent gets real data and
+                  // can speak it back factually (no hallucination).
+                  const resps = await Promise.all(
+                    (calls || []).map(async (c: any) => {
+                      // Handle Google Services
+                      if (c.name === 'execute_google_service') {
+                        const { serviceName, action, ...params } = (c.args || {}) as any;
+                        const tid = Math.random().toString(36).substring(7);
+                        setTasks((p) => [...p, { id: tid, serviceName, action, status: 'processing' }]);
 
-                       resps.push({
-                         id: c.id,
-                         name: c.name,
-                         response: { result: `Got it, I'll check your ${serviceName} right now...` }
-                       });
-                    }
+                        try {
+                          sessionRef.current?.sendRealtimeInput?.({
+                            text: `Quick, pulling that from your ${serviceName} now…`,
+                          });
+                        } catch {}
+
+                        try {
+                          const googleServices = GoogleServices.getInstance();
+                          const result = await googleServices.executeService(
+                            serviceName,
+                            action,
+                            params || {},
+                          );
+                          const taskResult = result.success
+                            ? `OK — ${serviceName} ${action}`
+                            : `Failed: ${result.error || 'unknown error'}`;
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: taskResult } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+
+                          const trim = (v: any): any => {
+                            if (Array.isArray(v)) return v.slice(0, 10).map(trim);
+                            if (v && typeof v === 'object') {
+                              const out: any = {};
+                              for (const k of Object.keys(v).slice(0, 30)) out[k] = trim(v[k]);
+                              return out;
+                            }
+                            if (typeof v === 'string') return v.length > 800 ? v.slice(0, 800) + '…' : v;
+                            return v;
+                          };
+
+                          return {
+                            id: c.id,
+                            name: c.name,
+                            response: result.success
+                              ? { ok: true, service: serviceName, action, data: trim(result.data) }
+                              : { ok: false, service: serviceName, action, error: result.error },
+                          };
+                        } catch (err: any) {
+                          const errMsg = err?.message || 'unknown error';
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: `Failed: ${errMsg}` } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+                          return {
+                            id: c.id,
+                            name: c.name,
+                            response: { ok: false, service: serviceName, action, error: errMsg },
+                          };
+                        }
+                      }
+
+                      // Handle Zapier Actions
+                      if (c.name === 'execute_zapier_action') {
+                        const { app, action, data } = (c.args || {}) as any;
+                        const tid = Math.random().toString(36).substring(7);
+                        setTasks((p) => [...p, { id: tid, serviceName: `Zapier:${app}`, action, status: 'processing' }]);
+
+                        try {
+                          sessionRef.current?.sendRealtimeInput?.({
+                            text: `Running that ${app} action for you now…`,
+                          });
+                        } catch {}
+
+                        try {
+                          // Load global Zapier config
+                          const { get: rtdbGet, ref: rtdbRef } = await import('firebase/database');
+                          const { rtdb } = await import('./firebase');
+                          const zapierSnap = await rtdbGet(rtdbRef(rtdb, 'platform/config/zapierMcp'));
+
+                          if (!zapierSnap.exists()) {
+                            return {
+                              id: c.id,
+                              name: c.name,
+                              response: {
+                                ok: false,
+                                error: 'Zapier not configured. Please ask an admin to connect Zapier in the Platform Admin panel.'
+                              },
+                            };
+                          }
+
+                          const zapierConfig = zapierSnap.val();
+                          if (!zapierConfig.serverUrl) {
+                            return {
+                              id: c.id,
+                              name: c.name,
+                              response: { ok: false, error: 'Zapier MCP server URL not found in platform config.' },
+                            };
+                          }
+
+                          // Call Zapier MCP endpoint
+                          const result = await fetch(`${zapierConfig.serverUrl}/execute`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ app, action, data: data || {} }),
+                          });
+
+                          if (!result.ok) {
+                            const errText = await result.text().catch(() => 'Unknown error');
+                            throw new Error(`Zapier MCP error: ${result.status} ${errText.slice(0, 200)}`);
+                          }
+
+                          const responseData = await result.json();
+                          const taskResult = `OK — ${app} ${action}`;
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: taskResult } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+
+                          return {
+                            id: c.id,
+                            name: c.name,
+                            response: { ok: true, app, action, data: responseData },
+                          };
+                        } catch (err: any) {
+                          const errMsg = err?.message || 'Zapier action failed';
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: `Failed: ${errMsg}` } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+                          return {
+                            id: c.id,
+                            name: c.name,
+                            response: { ok: false, app, action, error: errMsg },
+                          };
+                        }
+                      }
+
+                      return { id: c.id, name: c.name, response: { error: 'unknown tool' } };
+                    }),
+                  );
+
+                  try {
+                    const session = await sessionPromise;
+                    session.sendToolResponse({ functionResponses: resps });
+                  } catch (err) {
+                    console.error('Failed to send tool response:', err);
                   }
-                  sessionPromise.then(s => s.sendToolResponse({ functionResponses: resps }));
                 }
              }
              if (msg.serverContent) {
@@ -2167,11 +2288,11 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                       <div className="space-y-2">
                          <span className="text-[13px] font-black uppercase tracking-[0.18em] text-zinc-600">Voices</span>
                          <select
-                           value={settings.voice}
-                           onChange={(e) => setSettings(s => ({ ...s, voice: e.target.value }))}
+                           value={settings.selectedVoice || settings.voice || 'Aoede'}
+                           onChange={(e) => setSettings(s => ({ ...s, selectedVoice: e.target.value, voice: e.target.value }))}
                            className="h-[64px] w-full appearance-none rounded-[22px] border border-white/[0.12] bg-black/30 px-5 text-[16px] font-semibold text-white outline-none transition-all focus:border-lime-300/35"
-                           aria-label="Select superhero Voices"
-                           title="Select superhero Voices"
+                           aria-label="Select voice"
+                           title="Select voice (Aoede is the default — pick another to customize)"
                          >
                            <option value="Aoede">Athena — elegant, smooth, intelligent</option>
                            <option value="Charon">Superman — deep, steady, grounded</option>
@@ -2303,15 +2424,18 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                          </label>
                       </div>
 
-                      {/* Zapier MCP — connect 7000+ apps so the agent can act on them */}
-                      <div className="mt-4">
-                        <ZapierMcpPanel
-                          uid={user.uid}
-                          email={user.email || undefined}
-                          firstName={(settings.userName || '').split(' ')[0] || undefined}
-                          lastName={(settings.userName || '').split(' ').slice(1).join(' ') || undefined}
-                        />
-                      </div>
+                      {/* Admin controls - only for platform admins */}
+                      {user.email?.endsWith('@eburon.ai') && (
+                        <div className="mt-6 pt-6 border-t border-white/[0.08]">
+                          <button
+                            onClick={() => setShowAdmin(true)}
+                            className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-lime-300/30 bg-lime-300/[0.08] py-3 text-[12px] font-bold uppercase tracking-[0.14em] text-lime-300 transition-all hover:border-lime-300/55 hover:bg-lime-300/[0.15]"
+                          >
+                            <Code2 className="h-4 w-4" />
+                            Platform Admin
+                          </button>
+                        </div>
+                      )}
                    </div>
                 </div>
 
@@ -2339,6 +2463,20 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                   </div>
                 </div>
              </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Admin Panel — Platform-wide configuration (admin only) */}
+      <AnimatePresence>
+        {showAdmin && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[250]"
+          >
+            <AdminPanel onClose={() => setShowAdmin(false)} />
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -2443,9 +2581,36 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                             )}
                           </div>
                         )}
-                        {msg.text && (msg.fileUrl || msg.fileName)
-                          ? <span className="text-[13px] font-medium text-zinc-400">{msg.text}</span>
-                          : msg.text}
+                        {(() => {
+                          // If the AI returned an HTML document/fragment,
+                          // strip it from the visible text and render a live
+                          // preview underneath the bubble instead. Always
+                          // show prose text first so context isn't lost.
+                          const html = msg.role === 'model' ? extractHtml(msg.text) : null;
+                          const proseText = html
+                            ? msg.text
+                                .replace(/```html\s*[\s\S]*?```/gi, '')
+                                .replace(/```\s*[\s\S]*?```/g, '')
+                                .replace(/<!doctype html[\s\S]*?<\/html>/gi, '')
+                                .replace(/<html[\s\S]*?<\/html>/gi, '')
+                                .trim()
+                            : msg.text;
+                          const wasFile = msg.fileUrl || msg.fileName;
+                          return (
+                            <>
+                              {proseText && wasFile && (
+                                <span className="text-[13px] font-medium text-zinc-400">{proseText}</span>
+                              )}
+                              {proseText && !wasFile && proseText}
+                              {html && (
+                                <HtmlLiveView
+                                  html={html}
+                                  title={`${(settings.personaName || 'BEATRICE').toString()} document`}
+                                />
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     </motion.div>
                   );

@@ -120,6 +120,31 @@ export default function ZapierMcpPanel({ uid, email, firstName, lastName, onClos
     );
   }
 
+  // The Zapier MCP iframe enforces `frame-ancestors` on its server.
+  // Allowed: vep.eburon.ai, eburon.ai, connect.eburon.ai, zapier.com.
+  // Anything else (e.g. localhost during dev) gets blocked silently with
+  // a CSP error. Surface this clearly so the user isn't staring at empty
+  // space wondering why nothing is loading.
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  const ALLOWED = ['localhost', 'vep.eburon.ai', 'eburon.ai', 'voip.eburon.ai', 'connect.eburon.ai', 'zapier.com'];
+  const isAllowed = ALLOWED.some((h) => host === h || host.endsWith('.' + h));
+  if (!isAllowed) {
+    return (
+      <div className="rounded-[16px] border border-amber-500/30 bg-amber-500/10 p-4 text-[12px] leading-relaxed text-amber-100">
+        <p className="mb-1 text-[11px] font-black uppercase tracking-[0.18em] text-amber-300">
+          Zapier MCP not available on <code>{host || 'this host'}</code>
+        </p>
+        <p className="text-amber-200/90">
+          Zapier restricts the embed to these domains via CSP{' '}
+          <code>frame-ancestors</code>:{' '}
+          <span className="font-mono">vep.eburon.ai · eburon.ai · connect.eburon.ai · zapier.com</span>.
+          Run a deployed build on one of those domains (or contact Zapier
+          support to whitelist your dev host) to use the connector.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-[16px] border border-lime-300/25 bg-lime-300/[0.04] p-3">
       <div className="mb-2 flex items-center justify-between">

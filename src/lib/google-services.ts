@@ -50,26 +50,39 @@ class GoogleServices {
   private async loadCredentials(): Promise<boolean> {
     try {
       const user = auth.currentUser;
-      if (!user) {
-        throw new Error('No authenticated user found');
-      }
+      if (!user) return false;
 
+      // Primary: pick up the access token captured by the sign-in popup.
+      // (App.tsx stores it in localStorage as `googleAccessToken` right
+      // after `signInWithPopup` — this is what the user actually has.)
+      try {
+        const tok = typeof window !== 'undefined' ? window.localStorage.getItem('googleAccessToken') : null;
+        if (tok) {
+          this.credentials = {
+            accessToken: tok,
+            // Google access tokens normally expire in ~3600s. We don't have
+            // the exact expiry from the popup result, so be generous: assume
+            // 50 min from now and let the 401-retry path handle expiry.
+            expiresAt: Date.now() + 50 * 60 * 1000,
+            scopes: [],
+          };
+          return true;
+        }
+      } catch {}
+
+      // Secondary: check RTDB in case a backend has written refreshed creds.
       const credentialsRef = ref(rtdb, `users/${user.uid}/googleCredentials`);
       const snapshot = await get(credentialsRef);
-      
       if (snapshot.exists()) {
         this.credentials = snapshot.val() as GoogleCredentials;
-        
-        // Check if token is expired
         if (Date.now() > this.credentials.expiresAt) {
           console.warn('Google access token has expired');
           return false;
         }
-        
         return true;
       }
-      
-      throw new Error('No Google credentials found');
+
+      return false;
     } catch (error) {
       console.error('Error loading Google credentials:', error);
       return false;
@@ -94,14 +107,18 @@ class GoogleServices {
       }
 
       const baseUrl = this.getServiceBaseUrl(service);
-      const url = appendApiKey(`${baseUrl}${endpoint}`);
+      // Only attach `?key=` when we DON'T have an OAuth bearer. Some Google
+      // APIs (notably Gmail, Calendar, Drive) refuse mixed OAuth + API-key
+      // requests, which was making "Connected" calls fail with 401/403.
+      const useBearer = !!this.credentials?.accessToken;
+      const url = useBearer ? `${baseUrl}${endpoint}` : appendApiKey(`${baseUrl}${endpoint}`);
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string> | undefined),
       };
-      if (this.credentials?.accessToken) {
-        headers['Authorization'] = `Bearer ${this.credentials.accessToken}`;
+      if (useBearer) {
+        headers['Authorization'] = `Bearer ${this.credentials!.accessToken}`;
       }
 
       const response = await fetch(url, {
@@ -118,7 +135,12 @@ class GoogleServices {
             return this.makeApiRequest(service, endpoint, options);
           }
         }
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        // Include the API's actual error body so the agent can be honest
+        // about why the call failed instead of guessing.
+        let body = '';
+        try { body = await response.text(); } catch {}
+        const snippet = body.slice(0, 240).replace(/\s+/g, ' ');
+        throw new Error(`API ${response.status} ${response.statusText}${snippet ? ' — ' + snippet : ''}`);
       }
 
       const data = await response.json();
@@ -185,7 +207,31 @@ class GoogleServices {
   }
 
   async getEmails(maxResults: number = 10): Promise<GoogleServiceResponse> {
-    return this.makeApiRequest('gmail', `/users/me/messages?maxResults=${maxResults}`);
+    // /users/me/messages only returns IDs — for the agent to actually
+    // read & summarize, fetch each message's metadata (headers + snippet).
+    const list = await this.makeApiRequest('gmail', `/users/me/messages?maxResults=${maxResults}`);
+    if (!list.success || !list.data?.messages) return list;
+    const ids: { id: string }[] = list.data.messages.slice(0, Math.min(maxResults, 10));
+    const detailed = await Promise.all(
+      ids.map(async (m) => {
+        const r = await this.makeApiRequest(
+          'gmail',
+          `/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+        );
+        if (!r.success || !r.data) return null;
+        const headers: any[] = r.data.payload?.headers || [];
+        const get = (n: string) => headers.find((h) => h.name?.toLowerCase() === n.toLowerCase())?.value || '';
+        return {
+          id: m.id,
+          from: get('From'),
+          subject: get('Subject'),
+          date: get('Date'),
+          snippet: r.data.snippet || '',
+          unread: (r.data.labelIds || []).includes('UNREAD'),
+        };
+      }),
+    );
+    return { success: true, data: { messages: detailed.filter(Boolean) } };
   }
 
   private createEmailRaw(to: string, subject: string, body: string): string {
@@ -253,47 +299,81 @@ class GoogleServices {
     });
   }
 
-  // Universal service executor for the live agent
+  // Universal service executor for the live agent.
+  // The agent passes natural-language actions like "Draft email to Sarah" or
+  // "List my latest emails" — match by intent (regex), not by exact string.
   async executeService(service: string, action: string, params: Record<string, any>): Promise<GoogleServiceResponse> {
     try {
+      const a = (action || '').toLowerCase();
+      const isSend = /(send|email|compose|draft|reply|forward|write).*?(email|mail|message)|(send|reply|email)\b/i.test(a);
+      const isList = /(list|get|show|read|fetch|check|see|view|inbox|latest|recent|unread)/i.test(a);
+      const isCreate = /(create|add|schedule|book|invite|new|set\s*up|make)/i.test(a);
+      const isUpdate = /(update|edit|change|modify|append|set)/i.test(a);
+      const isDelete = /(delete|remove|trash|cancel)/i.test(a);
+
       switch (service.toLowerCase()) {
-        case 'gmail':
-          if (action === 'send') {
-            return this.sendEmail(params.to, params.subject, params.body);
-          } else if (action === 'list') {
-            return this.getEmails(params.maxResults);
+        case 'gmail': {
+          if (isSend && (params.to || params.recipient || params.email)) {
+            return this.sendEmail(
+              params.to || params.recipient || params.email,
+              params.subject || '(no subject)',
+              params.body || params.message || '',
+            );
           }
-          break;
-
-        case 'calendar':
-          if (action === 'list') {
-            return this.getEvents(params.maxResults);
-          } else if (action === 'create') {
-            return this.createEvent(params.summary, params.start, params.end);
+          // Default to list/read for any other intent — the most common
+          // request ("check my latest emails", "what's in my inbox").
+          return this.getEmails(params.maxResults || 10);
+        }
+        case 'calendar': {
+          if (isCreate && params.start && params.end) {
+            return this.createEvent(params.summary || params.title || '(no title)', params.start, params.end);
           }
-          break;
-
-        case 'drive':
-          if (action === 'list') {
-            return this.listFiles(params.maxResults);
-          } else if (action === 'upload') {
-            return this.uploadFile(params.fileName, params.mimeType, params.content);
+          return this.getEvents(params.maxResults || 10);
+        }
+        case 'drive': {
+          if (isCreate && params.fileName) {
+            return this.uploadFile(params.fileName, params.mimeType || 'text/plain', params.content || '');
           }
-          break;
-
-        case 'sheets':
-          if (action === 'get') {
-            return this.getSpreadsheet(params.spreadsheetId);
-          } else if (action === 'update') {
-            return this.updateCell(params.spreadsheetId, params.range, params.values);
+          return this.listFiles(params.maxResults || 10);
+        }
+        case 'sheets': {
+          if ((isUpdate || isCreate) && params.spreadsheetId && params.range) {
+            return this.updateCell(params.spreadsheetId, params.range, params.values || []);
           }
-          break;
-
+          if (params.spreadsheetId) return this.getSpreadsheet(params.spreadsheetId);
+          return { success: false, error: 'Missing spreadsheetId for Sheets request.' };
+        }
+        case 'tasks':
+        case 'docs':
+        case 'slides':
+        case 'forms':
+        case 'people':
+        case 'contacts':
+        case 'youtube':
+        case 'analytics':
+        case 'maps':
+        case 'geocoding':
+        case 'places':
+        case 'directions':
+        case 'roads':
+        case 'solar':
+        case 'aerial':
+        case 'search':
+        case 'searchconsole': {
+          // Generic passthrough — the agent can pass `endpoint` and let the
+          // request hit the correct REST path with API-key/OAuth attached.
+          const endpoint: string =
+            params.endpoint || (isList ? '' : params.path || '');
+          const method = isSend || isCreate ? 'POST' : isUpdate ? 'PATCH' : isDelete ? 'DELETE' : 'GET';
+          const init: RequestInit = { method };
+          if (method !== 'GET' && (params.body || params.data)) {
+            init.body = JSON.stringify(params.body || params.data);
+          }
+          return this.makeApiRequest(service.toLowerCase(), endpoint, init);
+        }
         default:
           return { success: false, error: `Unsupported service: ${service}` };
       }
-
-      return { success: false, error: `Unsupported action: ${action} for service: ${service}` };
     } catch (error) {
       console.error(`Error executing ${service}.${action}:`, error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
