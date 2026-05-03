@@ -1,4 +1,4 @@
-import { ref, get, set, update, serverTimestamp } from 'firebase/database';
+import { ref, child, get, set, update, serverTimestamp } from 'firebase/database';
 import { rtdb } from '../firebase/index';
 
 export interface MemoryItem {
@@ -36,7 +36,7 @@ export interface PersonalityProfile {
     [personName: string]: {
       relationship: string;
       context: string;
-      importance: 'low' | 'medium' | 'high';
+      importance: 'low' | 'medium' | 'high' | 'critical';
       notes: string[];
     };
   };
@@ -87,11 +87,11 @@ export class LongTermMemoryManager {
     };
 
     const memoryRef = this.getMemoryRef();
-    await set(ref(memoryRef, newMemory.id), newMemory);
+    await set(child(memoryRef, newMemory.id), newMemory);
 
     // If it's a personality memory, update personality profile
     if (memory.isPersonalityMemory) {
-      await this.updatePersonalityProfile(memory);
+      await this.updatePersonalityProfile(newMemory);
     }
 
     return newMemory.id;
@@ -100,13 +100,13 @@ export class LongTermMemoryManager {
   // Update existing memory
   async updateMemory(id: string, updates: Partial<MemoryItem>): Promise<void> {
     const memoryRef = this.getMemoryRef();
-    await update(ref(memoryRef, id), {
+    await update(child(memoryRef, id), {
       ...updates,
       updatedAt: Date.now(),
     });
 
     // If it's a personality memory, update personality profile
-    const itemRef = ref(memoryRef, id);
+    const itemRef = child(memoryRef, id);
     const snapshot = await get(itemRef);
     if (snapshot.exists()) {
       const memory = snapshot.val() as MemoryItem;
@@ -120,7 +120,7 @@ export class LongTermMemoryManager {
   // Access memory (increments access count)
   async accessMemory(id: string): Promise<MemoryItem | null> {
     const memoryRef = this.getMemoryRef();
-    const itemRef = ref(memoryRef, id);
+    const itemRef = child(memoryRef, id);
     const snapshot = await get(itemRef);
     
     if (!snapshot.exists()) {
@@ -240,7 +240,7 @@ export class LongTermMemoryManager {
   // Delete memory
   async deleteMemory(id: string): Promise<void> {
     const memoryRef = this.getMemoryRef();
-    await update(ref(memoryRef, id), null);
+    await set(child(memoryRef, id), null);
   }
 
   // Get personality profile

@@ -1,4 +1,4 @@
-import { ref, get, set, update, serverTimestamp } from 'firebase/database';
+import { ref, child, get, set, update, serverTimestamp } from 'firebase/database';
 import { rtdb } from '../firebase/index';
 
 export interface KnowledgeItem {
@@ -50,12 +50,12 @@ export class KnowledgeBaseManager {
     };
 
     const userKbRef = this.getUserKbRef();
-    await update(ref(userKbRef, newItem.id), newItem);
+    await update(child(userKbRef, newItem.id), newItem);
 
     // If public, also add to global knowledge base
     if (item.isPublic) {
       const globalKbRef = this.getGlobalKbRef();
-      await update(ref(globalKbRef, newItem.id), newItem);
+      await update(child(globalKbRef, newItem.id), newItem);
     }
 
     return newItem.id;
@@ -64,19 +64,19 @@ export class KnowledgeBaseManager {
   // Update existing knowledge item
   async updateKnowledgeItem(id: string, updates: Partial<KnowledgeItem>): Promise<void> {
     const userKbRef = this.getUserKbRef();
-    await update(ref(userKbRef, id), {
+    await update(child(userKbRef, id), {
       ...updates,
       updatedAt: Date.now(),
     });
 
     // Also update in global if it's public
-    const itemRef = ref(userKbRef, id);
+    const itemRef = child(userKbRef, id);
     const snapshot = await get(itemRef);
     if (snapshot.exists()) {
       const item = snapshot.val() as KnowledgeItem;
       if (item.isPublic) {
         const globalKbRef = this.getGlobalKbRef();
-        await update(ref(globalKbRef, id), {
+        await update(child(globalKbRef, id), {
           ...updates,
           updatedAt: Date.now(),
         });
@@ -89,17 +89,17 @@ export class KnowledgeBaseManager {
     const userKbRef = this.getUserKbRef();
     
     // Check if it's public before deleting from global
-    const itemRef = ref(userKbRef, id);
+    const itemRef = child(userKbRef, id);
     const snapshot = await get(itemRef);
     if (snapshot.exists()) {
       const item = snapshot.val() as KnowledgeItem;
       if (item.isPublic) {
         const globalKbRef = this.getGlobalKbRef();
-        await set(ref(globalKbRef, id), null);
+        await set(child(globalKbRef, id), null);
       }
     }
 
-    await update(ref(userKbRef, id), null);
+    await set(child(userKbRef, id), null);
   }
 
   // Get all user knowledge items
