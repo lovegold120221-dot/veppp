@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogIn, UserPlus, Eye, EyeOff, Mail, LockKeyhole } from 'lucide-react';
+import { LogIn, UserPlus, Eye, EyeOff, Mail, LockKeyhole, UserRound } from 'lucide-react';
 
 interface AuthInterfaceProps {
   authMode: 'signin' | 'signup' | 'reset';

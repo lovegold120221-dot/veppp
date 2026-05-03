@@ -1,4 +1,4 @@
-import { ChatMessage, AgentSettings } from '../types';
+import { ChatMessage, AgentSettings } from '../../lib/types';
 
 export type SpeakerRole = 'user' | 'model';
 

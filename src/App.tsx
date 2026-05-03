@@ -47,6 +47,15 @@ import {
   Square,
   CheckCircle,
   Settings,
+  UserRound,
+  Mail,
+  LockKeyhole,
+  Eye,
+  EyeOff,
+  Bot,
+  Code2,
+  Paperclip,
+  FileText,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import ArtifactPreview, { ArtifactData, ArtifactType } from './components/ArtifactPreview';

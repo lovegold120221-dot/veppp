@@ -1,5 +1,5 @@
 import { ref, get, set, update, serverTimestamp } from 'firebase/database';
-import { rtdb } from '../firebase';
+import { rtdb } from '../firebase/index';
 
 export interface MemoryItem {
   id: string;

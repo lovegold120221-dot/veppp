@@ -152,6 +152,8 @@ export default function ProfileSettings({
                   setLocalSettings(newSettings);
                   onSettingsChange(newSettings);
                 }}
+                title="Select language"
+                aria-label="Select language"
                 className="w-full rounded-[12px] border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-white focus:border-lime-300/50 focus:outline-none"
               >
                 <option value="English">English</option>
@@ -178,6 +180,8 @@ export default function ProfileSettings({
                   setLocalSettings(newSettings);
                   onSettingsChange(newSettings);
                 }}
+                title="Select AI voice"
+                aria-label="Select AI voice"
                 className="w-full rounded-[12px] border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-white focus:border-lime-300/50 focus:outline-none"
               >
                 <option value="Hera">Black Widow (Hera) - Female, Professional</option>

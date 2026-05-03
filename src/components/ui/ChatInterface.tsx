@@ -151,6 +151,8 @@ export default function ChatInterface({
           <button
             type="submit"
             disabled={!chatInput.trim()}
+            title="Send message"
+            aria-label="Send message"
             className="p-2 rounded-full bg-lime-500 text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lime-400 transition-colors"
           >
             <Send className="h-4 w-4" />

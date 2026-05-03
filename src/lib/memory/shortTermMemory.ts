@@ -1,5 +1,5 @@
 import { ref, get, set, update } from 'firebase/database';
-import { rtdb } from '../firebase';
+import { rtdb } from '../firebase/index';
 
 export interface ConversationContext {
   sessionId: string;

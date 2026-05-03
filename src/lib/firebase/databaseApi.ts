@@ -8,7 +8,7 @@ import {
   DatabaseReference,
   DataSnapshot
 } from 'firebase/database';
-import { rtdb } from '../firebase';
+import { rtdb } from './index';
 
 export interface ChatMessage {
   role: 'user' | 'model';

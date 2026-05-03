@@ -1,5 +1,5 @@
 import { ref, get, set, update, serverTimestamp } from 'firebase/database';
-import { rtdb } from '../firebase';
+import { rtdb } from '../firebase/index';
 
 export interface KnowledgeItem {
   id: string;
@@ -50,12 +50,12 @@ export class KnowledgeBaseManager {
     };
 
     const userKbRef = this.getUserKbRef();
-    await set(ref(userKbRef, newItem.id), newItem);
+    await update(ref(userKbRef, newItem.id), newItem);
 
     // If public, also add to global knowledge base
     if (item.isPublic) {
       const globalKbRef = this.getGlobalKbRef();
-      await set(ref(globalKbRef, newItem.id), newItem);
+      await update(ref(globalKbRef, newItem.id), newItem);
     }
 
     return newItem.id;
@@ -95,7 +95,7 @@ export class KnowledgeBaseManager {
       const item = snapshot.val() as KnowledgeItem;
       if (item.isPublic) {
         const globalKbRef = this.getGlobalKbRef();
-        await update(ref(globalKbRef, id), null);
+        await set(ref(globalKbRef, id), null);
       }
     }
 
