@@ -76,7 +76,13 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
         timestamp: Date.now(),
         isOwn: role === 'user'
       };
-      setMessages(prev => [...prev, newMessage]);
+      console.log('Saving message to chat:', newMessage);
+      setMessages(prev => {
+        console.log('Current messages before:', prev.length);
+        const updated = [...prev, newMessage];
+        console.log('Updated messages after:', updated.length);
+        return updated;
+      });
     }
 
     // Clear transcript after delay if not finished
@@ -118,11 +124,18 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
         }
         
         if (finalTranscript) {
+          // Show final transcript and save to chat immediately
           showLiveTranscript('user', finalTranscript, true);
+          
+          // Clear the overlay after a delay so user can see it was saved
+          setTimeout(() => {
+            setCurrentTranscript(null);
+          }, 2000);
+          
           // Simulate AI response
           setTimeout(() => {
             showLiveTranscript('model', "I hear you, Boss. Let me help with that.", true);
-          }, 1500);
+          }, 2500);
         }
       };
       
