@@ -973,6 +973,7 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   const [historyContext, setHistoryContext] = useState<string>("");
   const [historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
   const [currentTranscript, setCurrentTranscript] = useState<{ role: SpeakerRole, text: string } | null>(null);
+  const [showCaptions, setShowCaptions] = useState(true);
   
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
@@ -983,6 +984,50 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   const [chatInput, setChatInput] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
   const [aiAudioLevel, setAiAudioLevel] = useState(0);
+  
+  // Background audio
+  const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Initialize background audio
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const audio = new Audio('/bg/freesound_community-office-ambience-24734.mp3');
+      audio.loop = true;
+      audio.volume = 0.1; // 10% volume
+      audio.muted = true; // Start muted to prevent feedback
+      backgroundAudioRef.current = audio;
+      
+      // Prevent audio from being captured by microphone
+      audio.setAttribute('playsinline', '');
+      audio.setAttribute('webkit-playsinline', '');
+    }
+    
+    return () => {
+      if (backgroundAudioRef.current) {
+        backgroundAudioRef.current.pause();
+        backgroundAudioRef.current = null;
+      }
+    };
+  }, []);
+
+  // Play background audio when session starts
+  const playBackgroundAudio = () => {
+    if (backgroundAudioRef.current) {
+      backgroundAudioRef.current.muted = false;
+      backgroundAudioRef.current.play().catch(error => {
+        console.log('Background audio autoplay failed:', error);
+      });
+    }
+  };
+
+  // Stop background audio when session ends
+  const stopBackgroundAudio = () => {
+    if (backgroundAudioRef.current) {
+      backgroundAudioRef.current.muted = true;
+      backgroundAudioRef.current.pause();
+      backgroundAudioRef.current.currentTime = 0;
+    }
+  };
   const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null);
   const [settings, setSettings] = useState(initialSettings || { personaName: 'Beatrice', userName: 'Jo Lernout', systemPrompt: getSystemInstruction('Beatrice', 'Jo Lernout', 'English'), avatarUrl: '', selectedVoice: 'Aoede', language: 'English' });
 
@@ -1413,6 +1458,9 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
           onopen: () => {
              // Reset activity timer
              recordActivity();
+             
+             // Start background audio when session opens
+             playBackgroundAudio();
              
              // AI greets — and if there's prior conversation, recaps it
              // briefly so we always continue from where we left off, like a
@@ -1878,6 +1926,9 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
     setIsActive(false);
     setConnecting(false);
     setCurrentTranscript(null);
+    
+    // Stop background audio when session ends
+    stopBackgroundAudio();
   };
 
   // Real-time amplitude (0..1) driving every visualizer. Switches source on
@@ -1938,19 +1989,36 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
             )}
           </div>
 
-          {/* Right: App Logo */}
-          <button
-            onClick={() => setShowProfile(true)}
-            className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-lime-300/30 bg-black/65 p-2 text-lime-300/85 transition-colors hover:border-lime-300/55 hover:text-lime-200"
-            aria-label="Open profile settings"
-            title="Open profile settings"
-          >
-            <img
-              src="/images/playstore.png"
-              alt="Vep"
-              className="h-full w-full rounded-full object-cover"
-            />
-          </button>
+          {/* Right: Controls */}
+          <div className="flex items-center gap-3">
+            {/* Caption Toggle */}
+            <button 
+              onClick={() => setShowCaptions(!showCaptions)}
+              className={`flex h-12 w-12 items-center justify-center rounded-[18px] border transition-colors ${
+                showCaptions 
+                  ? 'border-lime-300/45 bg-lime-400/10 text-lime-300/85 shadow-[0_0_24px_rgba(163,230,53,0.12)]' 
+                  : 'border-lime-300/25 bg-black/55 text-lime-300/85 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)] hover:border-lime-300/55 hover:text-lime-200'
+              }`}
+              aria-label={showCaptions ? 'Hide captions' : 'Show captions'}
+              title={showCaptions ? 'Hide captions' : 'Show captions'}
+            >
+              {showCaptions ? <Volume2 className="h-6 w-6" /> : <VolumeX className="h-6 w-6" />}
+            </button>
+            
+            {/* App Logo */}
+            <button
+              onClick={() => setShowProfile(true)}
+              className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-lime-300/30 bg-black/65 p-2 text-lime-300/85 transition-colors hover:border-lime-300/55 hover:text-lime-200"
+              aria-label="Open profile settings"
+              title="Open profile settings"
+            >
+              <img
+                src="/images/playstore.png"
+                alt="Vep"
+                className="h-full w-full rounded-full object-cover"
+              />
+            </button>
+          </div>
         </header>
 
         {/* Main Interface */}
@@ -2010,68 +2078,70 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
            </div>
 
            {/* Transcription - Clean text only, AI left-to-right, User right-to-left */}
-           <div className="mt-14 w-full max-w-[342px] space-y-3">
-             {/* AI Speaking - animates left to right with speaker tag */}
-             <AnimatePresence>
-               {currentTranscript?.role === 'model' && (
-                 <motion.div
-                   initial={{ opacity: 0, x: -48 }}
-                   animate={{ opacity: 1, x: 0 }}
-                   exit={{ opacity: 0, x: 48 }}
-                   transition={{ type: 'spring', stiffness: 280, damping: 26 }}
-                   className="flex justify-start text-left"
-                 >
-                   <div className="flex w-full items-start gap-2.5 rounded-[18px] border border-lime-300/18 bg-black/70 px-3 py-2.5 text-left text-[13px] font-semibold leading-snug text-zinc-300 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] backdrop-blur-md">
-                     <span className="shrink-0 rounded-full border border-lime-300/25 bg-lime-300/8 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.22em] text-lime-300">
-                       {getSpeakerTag('model')}
-                     </span>
-                     <span
-                       className="min-w-0 overflow-hidden"
-                       style={{
-                         display: '-webkit-box',
-                         WebkitLineClamp: 4,
-                         WebkitBoxOrient: 'vertical',
-                       }}
-                     >
-                       {currentTranscript.text}
-                     </span>
-                   </div>
-                 </motion.div>
-               )}
-             </AnimatePresence>
+           {showCaptions && (
+             <div className="mt-14 w-full max-w-[342px] space-y-3">
+               {/* AI Speaking - animates left to right with speaker tag */}
+               <AnimatePresence>
+                 {currentTranscript?.role === 'model' && (
+                   <motion.div
+                     initial={{ opacity: 0, x: -48 }}
+                     animate={{ opacity: 1, x: 0 }}
+                     exit={{ opacity: 0, x: 48 }}
+                     transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+                     className="flex justify-start text-left"
+                   >
+                     <div className="flex w-full items-start gap-2.5 rounded-[18px] border border-lime-300/18 bg-black/70 px-3 py-2.5 text-left text-[13px] font-semibold leading-snug text-zinc-300 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] backdrop-blur-md">
+                       <span className="shrink-0 rounded-full border border-lime-300/25 bg-lime-300/8 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.22em] text-lime-300">
+                         {getSpeakerTag('model')}
+                       </span>
+                       <span
+                         className="min-w-0 overflow-hidden"
+                         style={{
+                           display: '-webkit-box',
+                           WebkitLineClamp: 4,
+                           WebkitBoxOrient: 'vertical',
+                         }}
+                       >
+                         {currentTranscript.text}
+                       </span>
+                     </div>
+                   </motion.div>
+                 )}
+               </AnimatePresence>
 
-             {/* User Speaking - animates right to left with speaker tag */}
-             <AnimatePresence>
-               {currentTranscript?.role === 'user' && (
-                 <motion.div
-                   initial={{ opacity: 0, x: 48 }}
-                   animate={{ opacity: 1, x: 0 }}
-                   exit={{ opacity: 0, x: -48 }}
-                   transition={{ type: 'spring', stiffness: 280, damping: 26 }}
-                   className="flex justify-end text-right"
-                 >
-                   <div className="flex w-full items-start justify-end gap-2.5 rounded-[18px] border border-cyan-400/28 bg-cyan-950/32 px-3 py-2.5 text-right text-[13px] font-semibold leading-snug text-cyan-50 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] backdrop-blur-md">
-                     <span
-                       className="min-w-0 overflow-hidden"
-                       style={{
-                         display: '-webkit-box',
-                         WebkitLineClamp: 4,
-                         WebkitBoxOrient: 'vertical',
-                       }}
-                     >
-                       {currentTranscript.text}
-                     </span>
-                     <span className="shrink-0 rounded-full border border-cyan-300/25 bg-cyan-400/8 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.22em] text-cyan-200">
-                       {getSpeakerTag('user')}
-                     </span>
-                   </div>
-                 </motion.div>
-               )}
-             </AnimatePresence>
+               {/* User Speaking - animates right to left with speaker tag */}
+               <AnimatePresence>
+                 {currentTranscript?.role === 'user' && (
+                   <motion.div
+                     initial={{ opacity: 0, x: 48 }}
+                     animate={{ opacity: 1, x: 0 }}
+                     exit={{ opacity: 0, x: -48 }}
+                     transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+                     className="flex justify-end text-right"
+                   >
+                     <div className="flex w-full items-start justify-end gap-2.5 rounded-[18px] border border-cyan-400/28 bg-cyan-950/32 px-3 py-2.5 text-right text-[13px] font-semibold leading-snug text-cyan-50 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] backdrop-blur-md">
+                       <span
+                         className="min-w-0 overflow-hidden"
+                         style={{
+                           display: '-webkit-box',
+                           WebkitLineClamp: 4,
+                           WebkitBoxOrient: 'vertical',
+                         }}
+                       >
+                         {currentTranscript.text}
+                       </span>
+                       <span className="shrink-0 rounded-full border border-cyan-300/25 bg-cyan-400/8 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.22em] text-cyan-200">
+                         {getSpeakerTag('user')}
+                       </span>
+                     </div>
+                   </motion.div>
+                 )}
+               </AnimatePresence>
 
-             {/* Main window stays clean. Conversation history lives in the
-                 Office History sidebar; only live transcripts appear here. */}
-           </div>
+               {/* Main window stays clean. Conversation history lives in the
+                   Office History sidebar; only live transcripts appear here. */}
+             </div>
+           )}
 
            {/* Control Buttons - Bottom Positioned with Power in Center */}
            <div className="absolute bottom-[36px] left-11 right-11 flex items-center justify-between">
