@@ -1107,22 +1107,8 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
 
     if (finished) {
       saveTranscriptMessage(role, nextText);
-      // Voice-triggered artifact generation: if the user finished saying
-      // something like "draft a contract for X", auto-open the branded
-      // Eburon AI document preview. The AI's own spoken reply (already
-      // configured via system prompt) handles the verbal acknowledgement.
-      if (role === 'user') {
-        const artifactType = detectArtifactRequest(nextText);
-        if (artifactType) {
-          const artifact = buildArtifactFromPrompt(
-            artifactType,
-            nextText,
-            settings.personaName,
-            settings.userName,
-          );
-          setCurrentArtifact(artifact);
-        }
-      }
+      // Note: Artifact generation is now handled in the main chat processing
+      // to ensure proper loading simulation and filler words
     }
 
     if (transcriptTimeoutRef.current) clearTimeout(transcriptTimeoutRef.current);
@@ -2640,31 +2626,35 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                   // Detect document/artifact request and auto-generate preview.
                   const artifactType = detectArtifactRequest(userText);
                   if (artifactType) {
-                    const artifact = buildArtifactFromPrompt(
-                      artifactType,
-                      userText,
-                      settings.personaName,
-                      settings.userName,
-                    );
-                    setCurrentArtifact(artifact);
+                    const boss = settings.userName ? `Boss ${settings.userName.split(' ')[0]}` : 'Boss';
+                    
+                    // Show loading simulation first, then instantly open artifact
+                    setTimeout(() => {
+                      const artifact = buildArtifactFromPrompt(
+                        artifactType,
+                        userText,
+                        settings.personaName,
+                        settings.userName,
+                      );
+                      setCurrentArtifact(artifact);
+                    }, 1500); // 1.5 second loading simulation
 
                     // Natural employee-style ack in chat history + AI voice.
-                    const boss = settings.userName ? `Boss ${settings.userName}` : 'Boss';
                     const ackByType: Record<string, string> = {
-                      contract: `Yes, ${boss}. I prepared the contract now. You can review it here, and you can sign directly from the boxes at the bottom.`,
-                      agreement: `Yes, ${boss}. I prepared the agreement. You can review it here, and you can sign directly from the boxes at the bottom.`,
-                      proposal: `Yes, ${boss}. I prepared the proposal. You can review it here, and sign to approve from the boxes at the bottom.`,
-                      quotation: `Yes, ${boss}. I prepared the quotation. You can review it and approve from the signature box at the bottom.`,
-                      statement_of_work: `Yes, ${boss}. I prepared the statement of work. You can review and sign at the bottom.`,
-                      invoice: `Yes, ${boss}. I prepared the invoice. You can review it here, and if you want to approve it, you can sign directly from the box at the bottom.`,
-                      csv: `Yes, ${boss}. I prepared the CSV preview and download file for you.`,
-                      slides: `Yes, ${boss}. I prepared the slide deck preview for you.`,
-                      pdf: `Yes, ${boss}. I prepared the PDF-style document preview. You can review it here and save it as PDF.`,
-                      letter: `Yes, ${boss}. I drafted the letter. You can review it in the preview.`,
-                      certificate: `Yes, ${boss}. I prepared the certificate for you.`,
-                      report: `Yes, ${boss}. I prepared the report preview.`,
+                      contract: `Okay, ${boss}. I'm preparing that contract now... almost done... there we go. You can review it right here, and sign directly from the boxes at the bottom.`,
+                      agreement: `Alright, ${boss}. I'm drafting the agreement... let me shape this into a clean document... okay, I'm finalizing it now. You can review it here and sign from the boxes at the bottom.`,
+                      proposal: `Okay, ${boss}. I'm building that proposal... structuring the content... almost there. You can review it here and approve from the signature boxes at the bottom.`,
+                      quotation: `Right, ${boss}. I'm preparing the quotation... calculating the details... got it. You can review and approve from the signature box at the bottom.`,
+                      statement_of_work: `Got it, ${boss}. I'm creating the statement of work... outlining the scope... okay, finalizing now. You can review and sign at the bottom.`,
+                      invoice: `Yes, ${boss}. I'm preparing the invoice... adding the line items... calculating totals... done. You can review it here and sign from the box at the bottom.`,
+                      csv: `Okay, ${boss}. I'm generating that CSV... setting up the headers... populating the data... there we go. You can review the preview and download it.`,
+                      slides: `Right, ${boss}. I'm building the slide deck... creating the slides... organizing the content... okay, ready. You can review the presentation now.`,
+                      pdf: `Got it, ${boss}. I'm preparing the PDF document... formatting the content... almost there... done. You can review it here and save as PDF.`,
+                      letter: `Okay, ${boss}. I'm drafting that letter... composing the message... polishing it up... ready. You can review it in the preview.`,
+                      certificate: `Yes, ${boss}. I'm creating the certificate... adding the details... formatting it... there we go. You can review and download it.`,
+                      report: `Right, ${boss}. I'm preparing that report... gathering the information... structuring the content... okay, I'm finalizing it now. You can review the preview.`,
                     };
-                    const ackText = ackByType[artifactType] || `Yes, ${boss}. I prepared the document for you.`;
+                    const ackText = ackByType[artifactType] || `Okay, ${boss}. I'm preparing that document... almost done... there we go. You can review it here.`;
                     const ackMsg = {
                       role: 'model' as const,
                       source: 'assistant' as const,
