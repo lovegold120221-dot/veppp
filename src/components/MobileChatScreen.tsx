@@ -23,7 +23,7 @@ interface Transcription {
 }
 
 export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps) {
-  const [messages] = useState<Message[]>([
+  const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       sender: 'BEATRICE',
@@ -64,7 +64,7 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
     setCurrentTranscript({ role, text: nextText, finished });
 
     if (finished) {
-      // Add to messages when finished
+      // Add to messages when finished - SAVE TRANSCRIPTION TO CHAT HISTORY
       const newMessage: Message = {
         id: Date.now().toString(),
         sender: role === 'model' ? 'BEATRICE' : 'JO LERNOUT',
@@ -72,7 +72,7 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
         timestamp: Date.now(),
         isOwn: role === 'user'
       };
-      // In a real implementation, this would update the messages state
+      setMessages(prev => [...prev, newMessage]);
     }
 
     // Clear transcript after delay if not finished
