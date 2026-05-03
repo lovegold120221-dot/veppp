@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { Mic, MicOff, Video, VideoOff, Volume2, VolumeX, Send, Square } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Volume2, VolumeX, Send, Square, X } from 'lucide-react';
+import ArtifactPreview, { ArtifactData } from '../ArtifactPreview';
 
 interface ChatMessage {
   role: 'user' | 'model';
@@ -17,6 +18,8 @@ interface ChatInterfaceProps {
   isVideoEnabled: boolean;
   isActive: boolean;
   chatInput: string;
+  artifact?: ArtifactData | null;
+  onCloseArtifact?: () => void;
   onSendMessage: (text: string) => void;
   onToggleMute: () => void;
   onToggleVideo: () => void;
@@ -35,6 +38,8 @@ export default function ChatInterface({
   isVideoEnabled,
   isActive,
   chatInput,
+  artifact,
+  onCloseArtifact,
   onSendMessage,
   onToggleMute,
   onToggleVideo,
@@ -94,6 +99,23 @@ export default function ChatInterface({
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Artifact Preview - Shows HTML documents, contracts, etc. */}
+      {artifact && onCloseArtifact && (
+        <div className="absolute inset-0 z-50 bg-black/90 p-4">
+          <div className="relative h-full">
+            <button
+              onClick={onCloseArtifact}
+              className="absolute -top-2 -right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+              title="Close artifact preview"
+              aria-label="Close artifact preview"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <ArtifactPreview artifact={artifact} onClose={onCloseArtifact} />
+          </div>
+        </div>
+      )}
 
       {/* Audio Level Indicators */}
       {(isActive || audioLevel > 0) && (

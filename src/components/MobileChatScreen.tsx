@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Menu, X, Paperclip, Send, Camera, Mic, MicOff, Video, VideoOff, Volume2, VolumeX, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import ArtifactPreview, { ArtifactData } from './ArtifactPreview';
 import './styles/MobileChatScreen.css';
 
 interface Message {
@@ -47,6 +48,7 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
   const [currentTranscript, setCurrentTranscript] = useState<Transcription | null>(null);
   const [showCaptions, setShowCaptions] = useState(true);
   const [isInSession, setIsInSession] = useState(false);
+  const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -285,6 +287,22 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
                 </div>
               </motion.div>
             </AnimatePresence>
+          </div>
+        )}
+
+        {/* Artifact Preview - Shows HTML documents, contracts, etc. */}
+        {currentArtifact && (
+          <div className="absolute inset-0 z-50 bg-black/95 p-4">
+            <div className="relative h-full">
+              <button
+                onClick={() => setCurrentArtifact(null)}
+                className="absolute -top-2 -right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+                title="Close preview"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <ArtifactPreview artifact={currentArtifact} onClose={() => setCurrentArtifact(null)} />
+            </div>
           </div>
         )}
 
