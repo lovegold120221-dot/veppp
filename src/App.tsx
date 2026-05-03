@@ -52,6 +52,10 @@ import { AnimatePresence, motion } from 'motion/react';
 import ArtifactPreview, { ArtifactData, ArtifactType } from './components/ArtifactPreview';
 import AdminPanel from './components/AdminPanel';
 import HtmlLiveView, { extractHtml } from './components/HtmlLiveView';
+import ProfileSettings from './components/ui/ProfileSettings';
+import ToolsModal from './components/ui/ToolsModal';
+import ChatInterface from './components/ui/ChatInterface';
+import AuthInterface from './components/ui/AuthInterface';
 import './components/styles/App.css';
 
 type SpeakerRole = 'user' | 'model';
