@@ -67,11 +67,10 @@ export const handleGoogleSignIn = async (): Promise<User> => {
       access_type: 'offline',
     });
     
-    // Add all Google OAuth scopes
-    provider.addScope('https://www.googleapis.com/auth/gmail.modify');
+    // Add only valid Google OAuth scopes
+    provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
     provider.addScope('https://www.googleapis.com/auth/gmail.send');
     provider.addScope('https://www.googleapis.com/auth/gmail.compose');
-    provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
     provider.addScope('https://www.googleapis.com/auth/drive');
     provider.addScope('https://www.googleapis.com/auth/drive.file');
     provider.addScope('https://www.googleapis.com/auth/drive.metadata');
@@ -94,7 +93,6 @@ export const handleGoogleSignIn = async (): Promise<User> => {
     provider.addScope('https://www.googleapis.com/auth/analytics.readonly');
     provider.addScope('https://www.googleapis.com/auth/analytics');
     provider.addScope('https://www.googleapis.com/auth/cloud-platform');
-    provider.addScope('https://www.googleapis.com/auth/cloud-projects');
     provider.addScope('https://www.googleapis.com/auth/cloud-billing');
     provider.addScope('https://www.googleapis.com/auth/firebase');
     provider.addScope('https://www.googleapis.com/auth/sqlservice');
@@ -109,8 +107,6 @@ export const handleGoogleSignIn = async (): Promise<User> => {
     provider.addScope('https://www.googleapis.com/auth/devstorage.full_control');
     provider.addScope('https://www.googleapis.com/auth/fitness.activity.read');
     provider.addScope('https://www.googleapis.com/auth/fitness.body.read');
-    provider.addScope('https://www.googleapis.com/auth/maps');
-    provider.addScope('https://www.googleapis.com/auth/streetviewimage');
     provider.addScope('https://www.googleapis.com/auth/photoslibrary');
     provider.addScope('https://www.googleapis.com/auth/photoslibrary.readonly');
     provider.addScope('https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata');

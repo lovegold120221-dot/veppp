@@ -18,7 +18,7 @@ export default function MobileLoginScreen({ onLogin, onStoreCredentials }: Mobil
     try {
       const provider = new GoogleAuthProvider();
       
-      // Add full Google service scopes for the live agent
+      // Add only valid Google service scopes for the live agent
       const scopes = [
         'https://www.googleapis.com/auth/gmail.readonly',      // Gmail read access
         'https://www.googleapis.com/auth/gmail.send',          // Gmail send access
@@ -33,16 +33,34 @@ export default function MobileLoginScreen({ onLogin, onStoreCredentials }: Mobil
         'https://www.googleapis.com/auth/documents',            // Docs full access
         'https://www.googleapis.com/auth/youtube.readonly',      // YouTube read access
         'https://www.googleapis.com/auth/youtube.upload',        // YouTube upload
-        'https://www.googleapis.com/auth/searchconsole',        // Search Console
         'https://www.googleapis.com/auth/analytics.readonly',   // Analytics read access
-        'https://www.googleapis.com/auth/maps',                  // Maps
         'https://www.googleapis.com/auth/contacts.readonly',    // Contacts read access
         'https://www.googleapis.com/auth/tasks',                 // Tasks
         'https://www.googleapis.com/auth/photos.readonly',       // Photos read access
         'https://www.googleapis.com/auth/cloud-platform',        // Cloud Platform
-        'https://www.googleapis.com/auth/cloud-projects',        // Cloud Projects
-        'https://www.googleapis.com/auth/userinfo.email',        // User email
-        'https://www.googleapis.com/auth/userinfo.profile'       // User profile
+        'https://www.googleapis.com/auth/cloud-billing',        // Cloud Billing
+        'https://www.googleapis.com/auth/firebase',              // Firebase
+        'https://www.googleapis.com/auth/sqlservice',           // Cloud SQL
+        'https://www.googleapis.com/auth/sqlservice.admin',      // Cloud SQL Admin
+        'https://www.googleapis.com/auth/bigquery',              // BigQuery
+        'https://www.googleapis.com/auth/bigquery.readonly',     // BigQuery read-only
+        'https://www.googleapis.com/auth/logging.read',          // Cloud Logging read-only
+        'https://www.googleapis.com/auth/monitoring',           // Cloud Monitoring
+        'https://www.googleapis.com/auth/monitoring.read',      // Cloud Monitoring read-only
+        'https://www.googleapis.com/auth/trace.append',         // Cloud Trace
+        'https://www.googleapis.com/auth/cloudruntimeconfig',    // Cloud Runtime Config
+        'https://www.googleapis.com/auth/devstorage.full_control', // Cloud Storage full control
+        'https://www.googleapis.com/auth/fitness.activity.read', // Fitness activity
+        'https://www.googleapis.com/auth/fitness.body.read',     // Fitness body
+        'https://www.googleapis.com/auth/photoslibrary',          // Photos Library
+        'https://www.googleapis.com/auth/photoslibrary.readonly', // Photos Library read-only
+        'https://www.googleapis.com/auth/forms',                 // Forms
+        'https://www.googleapis.com/auth/forms.body',            // Forms body
+        'https://www.googleapis.com/auth/chat.messages',         // Chat messages
+        'https://www.googleapis.com/auth/chat.spaces',           // Chat spaces
+        'https://www.googleapis.com/auth/chat.memberships',      // Chat memberships
+        'https://www.googleapis.com/auth/userinfo.email',         // User email
+        'https://www.googleapis.com/auth/userinfo.profile'        // User profile
       ];
       
       scopes.forEach(scope => {
