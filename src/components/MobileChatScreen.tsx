@@ -41,6 +41,16 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
     }
   ]);
   
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    const chatContainer = document.querySelector('.overflow-y-auto');
+    if (chatContainer) {
+      setTimeout(() => {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }, 100);
+    }
+  }, [messages]);
+  
   const [inputText, setInputText] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(true);
