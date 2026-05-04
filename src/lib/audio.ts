@@ -133,14 +133,27 @@ export class AudioRecorder {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
       sampleRate: 16000
     });
-    // Get audio with echo cancellation enabled
+    
+    // Enumerate devices and find a physical microphone (not system audio)
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const microphones = devices.filter(d => d.kind === 'audioinput' && !d.label.toLowerCase().includes('stereo mix') && !d.label.toLowerCase().includes('virtual') && !d.label.toLowerCase().includes('what you hear') && !d.label.toLowerCase().includes('loopback'));
+    
+    // Prefer the default microphone or first available microphone
+    const preferredDevice = microphones.find(d => d.label.toLowerCase().includes('default') || d.label.toLowerCase().includes('built-in') || d.label.toLowerCase().includes('internal')) || microphones[0];
+    
+    const audioConstraints: MediaTrackConstraints = {
+      echoCancellation: { ideal: true },
+      noiseSuppression: { ideal: true },
+      autoGainControl: { ideal: false }, // Disable AGC for cleaner audio
+      sampleRate: { ideal: 16000 },
+      channelCount: { ideal: 1 }, // Mono for speech recognition
+      // Explicitly request microphone, not system audio
+      deviceId: preferredDevice ? { exact: preferredDevice.deviceId } : undefined
+    };
+    
+    // Get audio from physical microphone only
     this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: 16000
-      }
+      audio: audioConstraints
     });
     this.source = this.audioContext.createMediaStreamSource(this.stream);
     
