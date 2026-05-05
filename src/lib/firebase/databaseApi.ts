@@ -9,6 +9,7 @@ import {
   DataSnapshot
 } from 'firebase/database';
 import { rtdb } from './index';
+import { saveGlobalChatMessage } from '../supabase/globalData';
 
 export interface ChatMessage {
   role: 'user' | 'model';
@@ -20,6 +21,10 @@ export interface ChatMessage {
   fileType?: string;
   fileName?: string;
   fileSize?: number;
+  storageProvider?: 'supabase' | 'google_drive' | 'firebase';
+  storageBucket?: string;
+  storagePath?: string;
+  googleDriveFileId?: string;
 }
 
 export interface AgentSettings {
@@ -62,13 +67,15 @@ export const saveMessage = async (
 ): Promise<void> => {
   try {
     const msgRef = getMessageRef(userId);
-    await set(msgRef, {
+    const message: ChatMessage = {
       role,
       source: role === 'model' ? 'assistant' : 'user',
       speaker: speaker || (role === 'model' ? 'ASSISTANT' : 'USER'),
       text: text.trim(),
       timestamp: Date.now()
-    });
+    };
+    await set(msgRef, message);
+    void saveGlobalChatMessage(userId, message);
   } catch (error) {
     console.error('Error saving message:', error);
     throw new Error('Failed to save message');
@@ -82,11 +89,15 @@ export const saveFileMessage = async (
     type: string;
     size: number;
     url?: string;
+    storageProvider?: 'supabase' | 'google_drive' | 'firebase';
+    storageBucket?: string;
+    storagePath?: string;
+    googleDriveFileId?: string;
   }
 ): Promise<void> => {
   try {
     const msgRef = getMessageRef(userId);
-    await set(msgRef, {
+    const message: ChatMessage = {
       role: 'user',
       source: 'user',
       speaker: 'USER',
@@ -95,8 +106,14 @@ export const saveFileMessage = async (
       fileType: file.type,
       fileName: file.name,
       fileSize: file.size,
+      storageProvider: file.storageProvider,
+      storageBucket: file.storageBucket,
+      storagePath: file.storagePath,
+      googleDriveFileId: file.googleDriveFileId,
       timestamp: Date.now()
-    });
+    };
+    await set(msgRef, message);
+    void saveGlobalChatMessage(userId, message);
   } catch (error) {
     console.error('Error saving file message:', error);
     throw new Error('Failed to save file message');
@@ -126,6 +143,10 @@ export const loadMessages = async (userId: string): Promise<ChatMessage[]> => {
           fileType: message.fileType,
           fileName: message.fileName,
           fileSize: message.fileSize,
+          storageProvider: message.storageProvider,
+          storageBucket: message.storageBucket,
+          storagePath: message.storagePath,
+          googleDriveFileId: message.googleDriveFileId,
         });
       }
     });

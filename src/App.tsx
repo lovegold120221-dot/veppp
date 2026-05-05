@@ -32,6 +32,8 @@ import { placeCsrCall } from './lib/vapi-csr';
 import { generateEburonVideo, checkEburonVideo } from './lib/eburon-video';
 import { LANGUAGES, DEFAULT_LANGUAGE, getAssistantLanguageInstruction, getStoredLanguage, setStoredLanguage } from './lib/languages';
 import EmotionalSynthesizer, { EmotionalState, EmotionalContext } from './lib/emotional-synthesis';
+import { saveGlobalChatMessage, saveGlobalKnowledgeFile } from './lib/supabase/globalData';
+import { uploadUserFileToSupabase } from './lib/supabase/storage';
 import {
   Loader2,
   Power,
@@ -82,6 +84,10 @@ interface ChatMessage {
   fileType?: string;
   fileName?: string;
   fileSize?: number;
+  storageProvider?: 'supabase' | 'google_drive' | 'firebase';
+  storageBucket?: string;
+  storagePath?: string;
+  googleDriveFileId?: string;
 }
 
 interface ActionTask {
@@ -1219,6 +1225,7 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
     };
     const msgRef = push(ref(rtdb, 'users/' + user.uid + '/messages'));
     await set(msgRef, userMsg);
+    void saveGlobalChatMessage(user.uid, userMsg);
     
     // Send to AI session
     try {
@@ -1297,17 +1304,20 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
     };
   }, [user.uid]);
 
-  const saveMessage = (role: SpeakerRole, text: string) => {
+  const saveMessage = (role: SpeakerRole, text: string, extra: Partial<ChatMessage> = {}) => {
     if (!text.trim()) return;
     try {
       const msgRef = push(ref(rtdb, 'users/' + user.uid + '/messages'));
-      set(msgRef, {
+      const message: ChatMessage = {
+        ...extra,
         role,
         source: role === 'model' ? 'assistant' : 'user',
         speaker: role === 'model' ? (settings.personaName || 'BEATRICE') : (settings.userName ? settings.userName.split(' ')[0] : 'BOSS'),
         text: text.trim(),
-        timestamp: Date.now()
-      });
+        timestamp: extra.timestamp || Date.now(),
+      };
+      set(msgRef, message);
+      void saveGlobalChatMessage(user.uid, message);
     } catch (e) {
       console.error(e);
     }
@@ -1486,22 +1496,106 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
         console.error('Failed to read file:', err);
       }
 
+      const upload = await uploadUserFileToSupabase({
+        firebaseUid: user.uid,
+        file,
+        folder: 'chat',
+      });
+      const persistentUrl = upload?.publicUrl || (previewable ? dataUrl : undefined);
+
       const fileMsg: ChatMessage = {
         role: 'user',
         source: 'user',
         speaker: settings.userName ? settings.userName.split(' ')[0] : 'BOSS',
         text: previewable ? `📎 ${file.name}` : `📎 ${file.name}`,
-        fileUrl: previewable ? dataUrl : undefined,
+        fileUrl: persistentUrl,
         fileType: file.type,
         fileName: file.name,
         fileSize: file.size,
+        storageProvider: upload?.provider,
+        storageBucket: upload?.bucket,
+        storagePath: upload?.path,
         timestamp: Date.now(),
       };
       setHistoryMsgs(prev => [...prev, fileMsg]);
-      saveMessage('user', `📎 ${file.name}`);
+      saveMessage('user', `📎 ${file.name}`, {
+        fileUrl: persistentUrl,
+        fileType: file.type,
+        fileName: file.name,
+        fileSize: file.size,
+        storageProvider: upload?.provider,
+        storageBucket: upload?.bucket,
+        storagePath: upload?.path,
+      });
 
       // Instantly trigger the AI to actually look at the file (with the strict
       // no-hallucination guard) so the user gets a real description right away.
+      if (dataUrl) {
+        sendFileToModel(file, dataUrl);
+      }
+    });
+  };
+
+  const handleKnowledgeBaseFiles = (files: FileList | null) => {
+    if (!files) return;
+
+    Array.from(files).forEach(async (file) => {
+      let dataUrl = '';
+      try {
+        dataUrl = await readFileAsDataURL(file);
+      } catch (err) {
+        console.error('Failed to read knowledge file:', err);
+      }
+
+      const upload = await uploadUserFileToSupabase({
+        firebaseUid: user.uid,
+        file,
+        folder: 'knowledge-base',
+      });
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+      const persistentUrl = upload?.publicUrl || ((isImage || isVideo) ? dataUrl : undefined);
+      const fileMsg: ChatMessage = {
+        role: 'user',
+        source: 'user',
+        speaker: settings.userName ? settings.userName.split(' ')[0] : 'BOSS',
+        text: `📚 Knowledge Base: ${file.name}`,
+        fileUrl: persistentUrl,
+        fileType: file.type,
+        fileName: file.name,
+        fileSize: file.size,
+        storageProvider: upload?.provider,
+        storageBucket: upload?.bucket,
+        storagePath: upload?.path,
+        timestamp: Date.now(),
+      };
+
+      setHistoryMsgs(prev => [...prev, fileMsg]);
+      saveMessage('user', `📚 Knowledge Base: ${file.name}`, {
+        fileUrl: persistentUrl,
+        fileType: file.type,
+        fileName: file.name,
+        fileSize: file.size,
+        storageProvider: upload?.provider,
+        storageBucket: upload?.bucket,
+        storagePath: upload?.path,
+      });
+
+      void saveGlobalKnowledgeFile({
+        firebaseUid: user.uid,
+        fileName: file.name,
+        fileType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+        source: upload ? 'supabase' : 'local',
+        upload,
+      });
+
+      if (sessionRef.current && isActive) {
+        sessionRef.current.sendRealtimeInput({
+          text: `Boss uploaded "${file.name}" as a knowledge-base file. Analyze the attached file with the strict file-analysis rules and remember only verified details for this session.`,
+        });
+      }
+
       if (dataUrl) {
         sendFileToModel(file, dataUrl);
       }
@@ -2773,68 +2867,13 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
                             </svg>
                             <span className="text-sm text-zinc-300">Upload Files for Knowledge Base</span>
-                            <input
-                              type="file"
-                              accept="image/*,video/*,application/pdf,.doc,.docx,.txt,.csv,.json,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.rtf,.md,.xml,.yaml,.yml"
-                              multiple
-                              className="hidden"
-                              onChange={(e) => {
-                                const files = Array.from(e.target.files || []);
-                                files.forEach(file => {
-                                  const fileUrl = URL.createObjectURL(file);
-                                  const isImage = file.type.startsWith('image/');
-                                  const isVideo = file.type.startsWith('video/');
-                                  
-                                  // Add to chat as knowledge base file
-                                  const fileMsg = {
-                                    role: 'user' as const,
-                                    source: 'user' as const,
-                                    speaker: settings.userName ? settings.userName.split(' ')[0] : 'BOSS',
-                                    text: `📚 Knowledge Base: ${file.name}`,
-                                    fileUrl,
-                                    fileType: file.type,
-                                    fileName: file.name,
-                                    timestamp: Date.now()
-                                  };
-                                  
-                                  const msgRef = push(ref(rtdb, 'users/' + user.uid + '/messages'));
-                                  set(msgRef, fileMsg);
-                                  
-                                  // AI acknowledges knowledge base addition
-                                  if (sessionRef.current && isActive) {
-                                    const getFileTypeDescription = (fileName: string, fileType: string) => {
-                                      if (fileType.startsWith('image/')) return "I can see the image";
-                                      if (fileType.startsWith('video/')) return "I can see the video";
-                                      if (fileName.endsWith('.pdf')) return "I've reviewed the PDF";
-                                      if (fileName.endsWith('.csv') || fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) return "I've analyzed the spreadsheet";
-                                      if (fileName.endsWith('.json')) return "I've processed the JSON data";
-                                      if (fileName.endsWith('.txt') || fileName.endsWith('.md')) return "I've read the text file";
-                                      if (fileName.endsWith('.doc') || fileName.endsWith('.docx')) return "I've reviewed the Word document";
-                                      if (fileName.endsWith('.ppt') || fileName.endsWith('.pptx')) return "I've looked at the presentation";
-                                      return "I've reviewed the document";
-                                    };
-                                    
-                                    sessionRef.current.sendRealtimeInput({
-                                      text: `Got it, Boss! I've added ${file.name} to my knowledge base. ${getFileTypeDescription(file.name, file.type)} and I'll remember this information for our conversations.`
-                                    });
-                                  }
-                                  
-                                  // Send to AI for analysis if it's image/video
-                                  if (isImage || isVideo) {
-                                    const reader = new FileReader();
-                                    reader.onload = (ev) => {
-                                      const base64Data = (ev.target?.result as string)?.split(',')[1];
-                                      if (base64Data && sessionRef.current) {
-                                        sessionRef.current.sendMessage({
-                                          inlineData: { mimeType: file.type, data: base64Data }
-                                        });
-                                      }
-                                    };
-                                    reader.readAsDataURL(file);
-                                  }
-                                });
-                              }}
-                            />
+	                            <input
+	                              type="file"
+	                              accept="image/*,video/*,application/pdf,.doc,.docx,.txt,.csv,.json,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.rtf,.md,.xml,.yaml,.yml"
+	                              multiple
+	                              className="hidden"
+	                              onChange={(e) => handleKnowledgeBaseFiles(e.target.files)}
+	                            />
                          </label>
                       </div>
 
@@ -2997,17 +3036,27 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                             className="mb-2 max-h-64 w-full rounded-[12px]"
                           />
                         )}
-                        {!msg.fileUrl && msg.fileName && (
-                          <div className="mb-2 flex items-center gap-2 rounded-[12px] border border-white/10 bg-black/40 px-3 py-2 text-[13px] font-medium text-zinc-300">
-                            <FileText className="h-4 w-4 shrink-0 text-lime-300" />
-                            <span className="truncate">{msg.fileName}</span>
-                            {typeof msg.fileSize === 'number' && (
-                              <span className="ml-auto shrink-0 text-[11px] text-zinc-500">
-                                {(msg.fileSize / 1024).toFixed(1)} KB
-                              </span>
-                            )}
-                          </div>
-                        )}
+	                        {msg.fileName && (!msg.fileUrl || (!msg.fileType?.startsWith('image/') && !msg.fileType?.startsWith('video/'))) && (
+	                          <div className="mb-2 flex items-center gap-2 rounded-[12px] border border-white/10 bg-black/40 px-3 py-2 text-[13px] font-medium text-zinc-300">
+	                            <FileText className="h-4 w-4 shrink-0 text-lime-300" />
+	                            <span className="truncate">{msg.fileName}</span>
+	                            {typeof msg.fileSize === 'number' && (
+	                              <span className="ml-auto shrink-0 text-[11px] text-zinc-500">
+	                                {(msg.fileSize / 1024).toFixed(1)} KB
+	                              </span>
+	                            )}
+	                            {msg.fileUrl && (
+	                              <a
+	                                href={msg.fileUrl}
+	                                target="_blank"
+	                                rel="noreferrer"
+	                                className="ml-2 shrink-0 rounded-full border border-lime-300/25 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-lime-200"
+	                              >
+	                                Open
+	                              </a>
+	                            )}
+	                          </div>
+	                        )}
                         {(() => {
                           // If the AI returned an HTML document/fragment,
                           // strip it from the visible text and render a live

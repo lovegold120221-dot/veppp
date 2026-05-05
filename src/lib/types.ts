@@ -10,6 +10,10 @@ export interface ChatMessage {
   fileType?: string;
   fileName?: string;
   fileSize?: number;
+  storageProvider?: 'supabase' | 'google_drive' | 'firebase';
+  storageBucket?: string;
+  storagePath?: string;
+  googleDriveFileId?: string;
 }
 
 export interface AgentSettings {
