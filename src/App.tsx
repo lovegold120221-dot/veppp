@@ -1692,7 +1692,13 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                     (calls || []).map(async (c: any) => {
                       // Handle Google Services
                       if (c.name === 'execute_google_service') {
-                        const { serviceName, action, ...params } = (c.args || {}) as any;
+                        const { serviceName, action, details, ...rest } = (c.args || {}) as any;
+                        // The tool schema nests email/event/file params under
+                        // `details` (e.g. { to, subject, body }). The executor
+                        // reads them at the top level, so flatten here —
+                        // otherwise sendEmail/createEvent/etc. never see the
+                        // recipient and silently fall through to "list".
+                        const params = { ...rest, ...(details || {}) };
                         const tid = Math.random().toString(36).substring(7);
                         setTasks((p) => [...p, { id: tid, serviceName, action, status: 'processing' }]);
 
