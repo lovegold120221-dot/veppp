@@ -28,6 +28,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, Type, ToolCall } from '@googl
 import { AudioRecorder, AudioStreamer } from './lib/audio';
 import { BIBLE_PERSONALITY, EMOTIONAL_AWARENESS_SYSTEM_PROMPT } from './lib/personality';
 import GoogleServices from './lib/google-services';
+import { placeCsrCall } from './lib/vapi-csr';
 import EmotionalSynthesizer, { EmotionalState, EmotionalContext } from './lib/emotional-synthesis';
 import {
   Loader2,
@@ -461,6 +462,7 @@ ${EMOTIONAL_AWARENESS_SYSTEM_PROMPT}
 - All real actions (Gmail, Calendar, Drive, Sheets, Docs, Slides, Maps, YouTube, Search, Tasks, Forms, Chat, Analytics, etc.) MUST be triggered by calling the execute_google_service function. NEVER simulate them in conversation.
 - When the user asks for an action, call the tool immediately and continue talking naturally while it runs in the background.
 - Pick the right serviceName + action based on what the user said. If unsure, ask one short clarifying question instead of guessing.
+- For OUTBOUND PHONE CALLS — when Boss says "call this number", "call <name>", "phone <person> about <topic>", "follow up by phone", or shares a number to dial — call the place_csr_call tool. Pass the phoneNumber, the recipient's name if known, and a short inquiry summary (the topic Boss wants relayed). The CSR persona (Beatrice as Jo Lernout's secretary) handles the actual conversation. Tell Boss honestly what came back: if the call dialed, say it dialed; if the API rejected it, say so plainly — never fake a call.
 
 ### DOCUMENT ARTIFACT GENERATION (Eburon AI branded):
 When the user asks to create, draft, prepare, generate, or send a business artifact — contract, invoice, agreement, proposal, quotation, statement of work, CSV/spreadsheet, slide deck/presentation, PDF/report, letter, certificate, or similar — the app automatically renders a branded Eburon AI document preview inside the chat. You do NOT have to produce the full document text in your reply.
@@ -1502,6 +1504,19 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                       },
                       required: ["app", "action"]
                   }
+               },
+               {
+                  name: "place_csr_call",
+                  description: "Place an outbound phone call using the CSR agent (Beatrice acting as Jo Lernout's personal secretary). Use whenever Boss says 'call this number', 'call <name>', 'phone <person> about <topic>', 'follow up by phone', or otherwise asks to dial someone. The call runs in the background through Vapi while you keep talking with Boss.",
+                  parameters: {
+                      type: Type.OBJECT,
+                      properties: {
+                        phoneNumber: { type: Type.STRING, description: "Recipient phone number, ideally in E.164 format like '+15551234567'. Include the country code if Boss mentioned it." },
+                        name: { type: Type.STRING, description: "Recipient's name if Boss told you. Used by the CSR to greet them naturally." },
+                        inquiry: { type: Type.STRING, description: "A short summary of WHY we are calling — the topic, question, or context Boss wants relayed (e.g., 'Eburon VEP demo follow-up from the vlog inquiry')." }
+                      },
+                      required: ["phoneNumber"]
+                  }
                }
             ]
           }]
@@ -1828,6 +1843,54 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                             name: c.name,
                             response: { ok: false, app, action, error: errMsg },
                           };
+                        }
+                      }
+
+                      // Handle CSR outbound calls via Vapi
+                      if (c.name === 'place_csr_call') {
+                        const { phoneNumber, name, inquiry } = (c.args || {}) as any;
+                        const tid = Math.random().toString(36).substring(7);
+                        const display = name ? `${name} (${phoneNumber})` : String(phoneNumber || 'unknown');
+                        setTasks((p) => [
+                          ...p,
+                          { id: tid, serviceName: 'CSR Call', action: `Calling ${display}`, status: 'processing' },
+                        ]);
+
+                        try {
+                          sessionRef.current?.sendRealtimeInput?.({
+                            text: `Dialing ${name || phoneNumber} now…`,
+                          });
+                        } catch {}
+
+                        try {
+                          const result = await placeCsrCall({ phoneNumber, name, inquiry });
+                          const taskResult = result.success
+                            ? `Dialing ${display}${result.callId ? ' — ' + result.callId.slice(0, 8) : ''}`
+                            : `Failed: ${result.error || 'unknown error'}`;
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: taskResult } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+
+                          return {
+                            id: c.id,
+                            name: c.name,
+                            response: result.success
+                              ? {
+                                  ok: true,
+                                  callId: result.callId,
+                                  status: result.status,
+                                  message: `Outbound call started to ${display}.`,
+                                }
+                              : { ok: false, error: result.error },
+                          };
+                        } catch (err: any) {
+                          const errMsg = err?.message || 'unknown error';
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: `Failed: ${errMsg}` } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+                          return { id: c.id, name: c.name, response: { ok: false, error: errMsg } };
                         }
                       }
 
