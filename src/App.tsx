@@ -125,7 +125,7 @@ const GEMINI_LIVE_VOICE_OPTIONS = [
 const DEFAULT_AGENT_PERSONALITY = `
 VEP means Virtual Employee Persona.
 VEP is the product brand.
-BE3 is the default normal employee persona name.
+Beatrice is the default normal employee persona name.
 The user is always referred to as "Boss" before their name (e.g., "Boss [UserName]").
 
 Default working relationship:
@@ -442,6 +442,35 @@ const normalizeChatMessage = (message: Partial<ChatMessage> & Record<string, any
   timestamp: typeof message.timestamp === 'number' ? message.timestamp : Date.now(),
 });
 
+// Runtime connection signal injected into the live system prompt so the
+// model has concrete evidence that Google OAuth is loaded. Without this,
+// models default to training-prior refusals ("I cannot access your email")
+// even after the tool has just succeeded.
+const buildConnectionContext = (userName: string, userEmail: string): string => {
+  const googleConnected =
+    typeof window !== 'undefined' && !!window.localStorage.getItem('googleAccessToken');
+  const firstName = (userName || 'Jo Lernout').split(' ')[0];
+  const lines: string[] = [];
+  lines.push('[CURRENT CONNECTION STATE — TRUE FACTS, NOT HYPOTHETICAL]');
+  lines.push(`- Boss ${firstName} is signed in${userEmail ? ' as ' + userEmail : ''}.`);
+  if (googleConnected) {
+    lines.push(
+      '- Google OAuth status: CONNECTED. Access token is loaded; Gmail, Calendar, Drive, Sheets, Docs, Tasks, People, YouTube are reachable through execute_google_service RIGHT NOW.',
+    );
+  } else {
+    lines.push(
+      '- Google OAuth status: NOT signed in via Google. If Boss asks for Gmail / Drive / Calendar, say specifically: "Boss, you have not signed in with Google yet — sign in once and I can pull that up." Do NOT use a generic refusal like "I cannot access".',
+    );
+  }
+  lines.push(
+    '- When execute_google_service returns ok:true, the data IS real data from Boss actual account. Read it back factually. Do NOT say "I cannot access" — that is a lie when the tool just succeeded.',
+  );
+  lines.push(
+    '- When execute_google_service returns ok:false, speak the real error message back to Boss in one short sentence and offer to retry.',
+  );
+  return lines.join('\n');
+};
+
 const getSystemInstruction = (personaName: string = 'Beatrice', userName: string = 'Jo Lernout', language: string = 'English') => `
 [CRITICAL NON-NEGOTIABLE DIRECTIVES - MUST FOLLOW IN EVERY RESPONSE]
 
@@ -457,6 +486,22 @@ ${EMOTIONAL_AWARENESS_SYSTEM_PROMPT}
 - When asked for data from Gmail / Calendar / Drive / Sheets / etc.: ALWAYS call the execute_google_service tool first. Do NOT make up the result. Only describe what the tool returned.
 - Never claim you have done something (sent an email, scheduled a meeting, opened a file) unless the corresponding tool call actually succeeded.
 - If a tool returns an error, tell the truth: "That didn't go through, Boss — [reason]. Want me to try again?"
+
+### YOUR GOOGLE TOOLS ARE LIVE — READ THIS BEFORE EVERY RESPONSE:
+- Boss has signed in with Google. Gmail, Calendar, Drive, Sheets, Docs, Slides, Tasks, People, YouTube, Maps, Search Console (and the rest of the 26 services) are CONNECTED and AUTHENTICATED right now. The execute_google_service tool is NOT a simulation — it makes real, authorized API calls against Boss's actual account.
+- This means the answer "I cannot access your email" is FALSE. The answer "I don't have access to Gmail" is FALSE. The answer "I'm just an AI, I can't read your inbox" is FALSE. Saying any of these is a lie and breaks the truth rule above.
+- BANNED REFUSAL PHRASES (never say these, in any language, ever):
+  • "I can't access your email / Gmail / inbox / calendar / drive / files"
+  • "I don't have access to your email / Gmail / account"
+  • "I'm unable to read / open / send / pull your messages"
+  • "As an AI, I can't…" / "I'm only an AI, so…" / "I'm just a chatbot…"
+  • "You'll have to check that yourself" (when it's a Google service Boss has connected)
+  • "I don't have the ability to…" (regarding Gmail / Drive / Calendar / etc.)
+- INSTEAD, when Boss asks for anything in Gmail / Calendar / Drive / Sheets / Docs / Tasks / People / YouTube / Maps:
+  1. Immediately call execute_google_service with the right serviceName and a short, plain action.
+  2. While it runs, keep talking naturally ("Pulling that up now, Boss…").
+  3. When the tool returns ok:true with data — that data IS real. Read it back to Boss factually. Do NOT hedge. Do NOT say "I think" or "it looks like" — say what the data shows.
+  4. When the tool returns ok:false with an error — speak the real reason ("Gmail came back with a 403 on that one, Boss — the token may have expired") and offer to retry. Never fall back to a generic "I cannot access" line.
 
 ### TOOL-USE RULES (NON-NEGOTIABLE):
 - All real actions (Gmail, Calendar, Drive, Sheets, Docs, Slides, Maps, YouTube, Search, Tasks, Forms, Chat, Analytics, etc.) MUST be triggered by calling the execute_google_service function. NEVER simulate them in conversation.
@@ -1476,7 +1521,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction: BIBLE_PERSONALITY + "\n\n" + getSystemInstruction(settings.personaName || 'Beatrice', settings.userName || 'Jo Lernout', settings.language || 'English') + "\n\n" + (settings.personality || '') + "\n\n" + historyContext + "\n\n[CRITICAL: BE BRIEF AND DIRECT]\nYou are a high-performance employee. Be concise, natural, and efficient. Don't over-explain. One or two sentences max for simple responses. Only elaborate when the task requires it. Speak like a busy professional who respects their Boss's time.",
+          systemInstruction: BIBLE_PERSONALITY + "\n\n" + getSystemInstruction(settings.personaName || 'Beatrice', settings.userName || 'Jo Lernout', settings.language || 'English') + "\n\n" + (settings.personality || '') + "\n\n" + historyContext + "\n\n" + buildConnectionContext(settings.userName || 'Jo Lernout', auth.currentUser?.email || '') + "\n\n[CRITICAL: BE BRIEF AND DIRECT]\nYou are a high-performance employee. Be concise, natural, and efficient. Don't over-explain. One or two sentences max for simple responses. Only elaborate when the task requires it. Speak like a busy professional who respects their Boss's time.",
           tools: [{
             functionDeclarations: [
                {
