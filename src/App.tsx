@@ -29,6 +29,7 @@ import { AudioRecorder, AudioStreamer } from './lib/audio';
 import { BIBLE_PERSONALITY, EMOTIONAL_AWARENESS_SYSTEM_PROMPT } from './lib/personality';
 import GoogleServices from './lib/google-services';
 import { placeCsrCall } from './lib/vapi-csr';
+import { LANGUAGES, DEFAULT_LANGUAGE, getStoredLanguage, setStoredLanguage } from './lib/languages';
 import EmotionalSynthesizer, { EmotionalState, EmotionalContext } from './lib/emotional-synthesis';
 import {
   Loader2,
@@ -183,7 +184,10 @@ const DEFAULT_SETTINGS: AgentSettings = {
   personality: DEFAULT_AGENT_PERSONALITY,
   avatarUrl: '',
   selectedVoice: 'Aoede',
-  language: 'English',
+  // Seed from the auth-screen language picker (persisted in localStorage)
+  // so the very first session in a new profile already speaks Boss's
+  // language instead of falling back to English.
+  language: getStoredLanguage(),
 };
 
 const ASSISTANT_ROLE_ALIASES = new Set(['model', 'assistant', 'ai', 'bot', 'agent', 'beatrice']);
@@ -611,6 +615,10 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
+  // Language is locked in BEFORE auth so the very first session greets
+  // Boss in the right tongue. Persisted in localStorage; the live agent
+  // and the in-app settings panel both read from the same source.
+  const [authLanguage, setAuthLanguage] = useState<string>(() => getStoredLanguage());
   const [authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
@@ -664,9 +672,16 @@ export default function App() {
           } else {
             const data = userSnap.val();
             if (data.settings) {
+              // Auth-screen language pick wins over any stale value
+              // saved in the profile — Boss explicitly chose it just
+              // now, before sign-in. The settings panel writes back to
+              // both localStorage and RTDB, so changes mid-session
+              // still stick.
+              const authScreenLang = getStoredLanguage();
               setSettings({
                 ...DEFAULT_SETTINGS,
                 ...data.settings,
+                language: authScreenLang,
               });
             }
             await update(userRef, {
@@ -882,6 +897,33 @@ export default function App() {
           )}
 
           <form onSubmit={handleEmailAuth} className="space-y-4">
+            {/* Language picker — set FIRST, before sign-in. Persists to
+                localStorage so the next session also opens in the
+                correct language. */}
+            <div className="space-y-1.5">
+              <label className="ml-1 block text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+                Language — set this first
+              </label>
+              <div className="relative">
+                <select
+                  value={authLanguage}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setAuthLanguage(next);
+                    setStoredLanguage(next);
+                  }}
+                  aria-label="Select your language"
+                  title="Select your language"
+                  className="h-14 w-full appearance-none rounded-2xl border border-emerald-500/30 bg-zinc-900/50 pl-4 pr-10 text-sm font-semibold text-white outline-none transition-all focus:border-lime-400/60 focus:bg-zinc-900"
+                >
+                  {LANGUAGES.map((lang) => (
+                    <option key={lang} value={lang}>{lang}</option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500">▾</span>
+              </div>
+            </div>
+
             {isSignUp && (
               <div className="relative">
                 <UserRound className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-600" />
@@ -1152,7 +1194,7 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   };
 
   const [currentArtifact, setCurrentArtifact] = useState<ArtifactData | null>(null);
-  const [settings, setSettings] = useState(initialSettings || { personaName: 'Beatrice', userName: 'Jo Lernout', systemPrompt: getSystemInstruction('Beatrice', 'Jo Lernout', 'English'), avatarUrl: '', selectedVoice: 'Aoede', language: 'English' });
+  const [settings, setSettings] = useState(initialSettings || { personaName: 'Beatrice', userName: 'Jo Lernout', systemPrompt: getSystemInstruction('Beatrice', 'Jo Lernout', getStoredLanguage()), avatarUrl: '', selectedVoice: 'Aoede', language: getStoredLanguage() });
 
   const aiRef = useRef<GoogleGenAI | null>(null);
   const sessionRef = useRef<any>(null);
@@ -2596,24 +2638,18 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                          <span className="text-[13px] font-black uppercase tracking-[0.18em] text-zinc-600">Language</span>
                          <select
                            value={settings.language}
-                           onChange={(e) => setSettings(s => ({ ...s, language: e.target.value }))}
+                           onChange={(e) => {
+                             const next = e.target.value;
+                             setSettings(s => ({ ...s, language: next }));
+                             setStoredLanguage(next);
+                           }}
                            className="h-[64px] w-full appearance-none rounded-[22px] border border-white/[0.12] bg-black/30 px-5 text-[16px] font-semibold text-white outline-none transition-all focus:border-lime-300/35"
                            aria-label="Select language"
                            title="Select language"
                          >
-                            <option value="English">English</option>
-                            <option value="Dutch">Dutch</option>
-                            <option value="Dutch Flemish">Dutch Flemish</option>
-                            <option value="Spanish">Spanish</option>
-                            <option value="French">French</option>
-                            <option value="German">German</option>
-                            <option value="Italian">Italian</option>
-                            <option value="Portuguese">Portuguese</option>
-                            <option value="Chinese (Simplified)">Chinese (Simplified)</option>
-                            <option value="Chinese (Traditional)">Chinese (Traditional)</option>
-                            <option value="Japanese">Japanese</option>
-                            <option value="Korean">Korean</option>
-                            <option value="Russian">Russian</option>
+                           {LANGUAGES.map((lang) => (
+                             <option key={lang} value={lang}>{lang}</option>
+                           ))}
                          </select>
                       </div>
 
