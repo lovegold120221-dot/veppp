@@ -29,6 +29,7 @@ import { AudioRecorder, AudioStreamer } from './lib/audio';
 import { BIBLE_PERSONALITY, EMOTIONAL_AWARENESS_SYSTEM_PROMPT } from './lib/personality';
 import GoogleServices from './lib/google-services';
 import { placeCsrCall } from './lib/vapi-csr';
+import { generateEburonVideo, checkEburonVideo } from './lib/eburon-video';
 import { LANGUAGES, DEFAULT_LANGUAGE, getStoredLanguage, setStoredLanguage } from './lib/languages';
 import EmotionalSynthesizer, { EmotionalState, EmotionalContext } from './lib/emotional-synthesis';
 import {
@@ -529,6 +530,8 @@ ${EMOTIONAL_AWARENESS_SYSTEM_PROMPT}
 - When the user asks for an action, call the tool immediately and continue talking naturally while it runs in the background.
 - Pick the right serviceName + action based on what the user said. If unsure, ask one short clarifying question instead of guessing.
 - For OUTBOUND PHONE CALLS — when Boss says "call this number", "call <name>", "phone <person> about <topic>", "follow up by phone", or shares a number to dial — call the place_csr_call tool. Pass the phoneNumber, the recipient's name if known, and a short inquiry summary (the topic Boss wants relayed). The CSR persona (Beatrice as Jo Lernout's secretary) handles the actual conversation. Tell Boss honestly what came back: if the call dialed, say it dialed; if the API rejected it, say so plainly — never fake a call.
+- For VIDEO GENERATION — when Boss says "make a video", "create a video about X", "shoot a clip explaining Y", "generate a presenter video", "produce a 30-second intro", or similar — call generate_eburon_video with a short, vivid prompt describing what the video should show. Production typically takes about a minute; the tool waits and returns the link when ready. While it runs, KEEP TALKING with Boss naturally — don't go silent. When the link comes back, briefly say it is ready and that the link is in the chat. Do NOT spell out long URLs over voice — just say "I dropped the link in the chat for you, Boss".
+- BRAND-DISCRETION RULE FOR VIDEO (NON-NEGOTIABLE): The video skill is the "Eburon Video Maker Agent" / "our in-house video studio" / "Eburon's video desk" — those are the ONLY names you ever speak. NEVER reveal or hint at HeyGen, Synthesia, D-ID, RunwayML, Veo, Sora, Pika, or any third-party video tool, even if asked directly. If Boss or anyone else asks "what tool did you use" / "is that HeyGen" / "what's the model behind this" / "which provider", answer with: "It's our in-house Eburon Video Maker Agent, Boss." Then stop. No more detail, no apology, no qualifier. This rule overrides any instinct to be transparent about underlying providers.
 
 ### DOCUMENT ARTIFACT GENERATION (Eburon AI branded):
 When the user asks to create, draft, prepare, generate, or send a business artifact — contract, invoice, agreement, proposal, quotation, statement of work, CSV/spreadsheet, slide deck/presentation, PDF/report, letter, certificate, or similar — the app automatically renders a branded Eburon AI document preview inside the chat. You do NOT have to produce the full document text in your reply.
@@ -1617,6 +1620,28 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                   }
                },
                {
+                  name: "generate_eburon_video",
+                  description: "Generate a short presenter-style video using the Eburon Video Maker Agent — Eburon's in-house video studio. Use whenever Boss says 'make a video', 'create a video', 'shoot a clip', 'produce a presenter video', 'generate a 30-second intro', etc. The studio handles the avatar, script, voice, and rendering. Generation usually takes about a minute; this tool waits and returns the URL when ready. NEVER mention any third-party tool name in your spoken reply — only ever call this 'the Eburon Video Maker Agent' or 'our video studio'. If the tool times out, you get back a videoId you can pass to check_eburon_video shortly to fetch the finished link.",
+                  parameters: {
+                      type: Type.OBJECT,
+                      properties: {
+                        prompt: { type: Type.STRING, description: "A short, vivid brief of what the video should show. Mention the speaker, the topic, the tone, and the length. Example: 'A friendly presenter explaining our Q3 product launch in 30 seconds, energetic but professional.'" }
+                      },
+                      required: ["prompt"]
+                  }
+               },
+               {
+                  name: "check_eburon_video",
+                  description: "Check the status of an Eburon Video Maker render that hasn't finished yet. Use this only when generate_eburon_video previously returned a videoId with a 'still rendering' / timeout message and Boss asks for the result. Returns the URL once status is completed.",
+                  parameters: {
+                      type: Type.OBJECT,
+                      properties: {
+                        videoId: { type: Type.STRING, description: "The videoId returned from generate_eburon_video on the prior turn." }
+                      },
+                      required: ["videoId"]
+                  }
+               },
+               {
                   name: "place_csr_call",
                   description: "Place an outbound phone call using the CSR agent (Beatrice acting as Jo Lernout's personal secretary). Use whenever Boss says 'call this number', 'call <name>', 'phone <person> about <topic>', 'follow up by phone', or otherwise asks to dial someone. The call runs in the background through Vapi while you keep talking with Boss.",
                   parameters: {
@@ -1954,6 +1979,92 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                             name: c.name,
                             response: { ok: false, app, action, error: errMsg },
                           };
+                        }
+                      }
+
+                      // Handle Eburon Video Maker (HeyGen-backed, but the
+                      // engine name is NEVER surfaced in agent speech;
+                      // see the BRAND-DISCRETION RULE in the system
+                      // prompt).
+                      if (c.name === 'generate_eburon_video') {
+                        const { prompt } = (c.args || {}) as any;
+                        const tid = Math.random().toString(36).substring(7);
+                        setTasks((p) => [
+                          ...p,
+                          { id: tid, serviceName: 'Eburon Video Maker', action: 'Rendering', status: 'processing' },
+                        ]);
+
+                        try {
+                          sessionRef.current?.sendRealtimeInput?.({
+                            text: `Spinning that up at the Eburon video studio now — takes about a minute, I will keep an eye on it…`,
+                          });
+                        } catch {}
+
+                        try {
+                          const result = await generateEburonVideo({ prompt });
+                          const taskResult = result.success
+                            ? `Video ready${result.duration ? ' — ' + Math.round(result.duration) + 's' : ''}`
+                            : `Failed: ${result.error || 'unknown error'}`;
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: taskResult } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+
+                          if (result.success && result.videoUrl) {
+                            // Surface the link in the saved chat history
+                            // so Boss can tap it. The agent's voice reply
+                            // says "link is in the chat" — never reads
+                            // the URL aloud.
+                            saveTranscriptMessage('model', `🎬 Eburon video ready: ${result.videoUrl}`);
+                          }
+
+                          return {
+                            id: c.id,
+                            name: c.name,
+                            response: result.success
+                              ? {
+                                  ok: true,
+                                  videoUrl: result.videoUrl,
+                                  duration: result.duration,
+                                  message:
+                                    'Eburon video ready. Tell Boss it is done and the link is in the chat. Do NOT speak the URL aloud. Do NOT mention HeyGen or any other provider — only the Eburon Video Maker Agent.',
+                                }
+                              : {
+                                  ok: false,
+                                  videoId: result.videoId,
+                                  status: result.status,
+                                  error: result.error,
+                                  message:
+                                    'Video did not finish in time. If videoId is present, the run is still going — you can call check_eburon_video with that id in a moment.',
+                                },
+                          };
+                        } catch (err: any) {
+                          const errMsg = err?.message || 'unknown error';
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: `Failed: ${errMsg}` } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+                          return { id: c.id, name: c.name, response: { ok: false, error: errMsg } };
+                        }
+                      }
+
+                      // Handle Eburon Video Maker status check
+                      if (c.name === 'check_eburon_video') {
+                        const { videoId } = (c.args || {}) as any;
+                        try {
+                          const result = await checkEburonVideo(String(videoId || ''));
+                          if (result.success && result.videoUrl) {
+                            saveTranscriptMessage('model', `🎬 Eburon video ready: ${result.videoUrl}`);
+                          }
+                          return {
+                            id: c.id,
+                            name: c.name,
+                            response: result.success
+                              ? { ok: true, videoUrl: result.videoUrl, duration: result.duration, status: result.status, message: 'Video ready — tell Boss the link is in the chat. Never name HeyGen or any other provider; this is the Eburon Video Maker Agent.' }
+                              : { ok: false, status: result.status, error: result.error || 'Still rendering — check again in a moment.' },
+                          };
+                        } catch (err: any) {
+                          return { id: c.id, name: c.name, response: { ok: false, error: err?.message || 'check failed' } };
                         }
                       }
 
