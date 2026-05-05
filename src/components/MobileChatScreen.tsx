@@ -48,8 +48,6 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const transcriptTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const isListeningRef = useRef(false);
 
   // Transcription functions
   const showLiveTranscript = (role: 'user' | 'model', text: string, finished = false) => {
@@ -71,13 +69,7 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
         timestamp: Date.now(),
         isOwn: role === 'user'
       };
-      console.log('Saving message to chat:', newMessage);
-      setMessages(prev => {
-        console.log('Current messages before:', prev.length);
-        const updated = [...prev, newMessage];
-        console.log('Updated messages after:', updated.length);
-        return updated;
-      });
+      setMessages(prev => [...prev, newMessage]);
     }
 
     // Clear transcript after delay if not finished
@@ -91,86 +83,11 @@ export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps
 
   const startSession = async () => {
     setIsInSession(true);
-    
-    // Initialize speech recognition
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'en-US';
-      
-      recognitionRef.current.onresult = (event: any) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-        
-        // Show live transcription
-        if (interimTranscript) {
-          showLiveTranscript('user', interimTranscript, false);
-        }
-        
-        if (finalTranscript) {
-          // Show final transcript and save to chat immediately
-          showLiveTranscript('user', finalTranscript, true);
-          
-          // Clear the overlay after a delay so user can see it was saved
-          setTimeout(() => {
-            setCurrentTranscript(null);
-          }, 2000);
-          
-          // Simulate AI response
-          setTimeout(() => {
-            showLiveTranscript('model', "I hear you, Boss. Let me help with that.", true);
-          }, 2500);
-        }
-      };
-      
-      recognitionRef.current.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error === 'no-speech') {
-          showLiveTranscript('model', "I'm listening, Boss...", false);
-        }
-      };
-      
-      recognitionRef.current.onend = () => {
-        if (isListeningRef.current) {
-          // Restart if we're still in session
-          recognitionRef.current?.start();
-        }
-      };
-      
-      isListeningRef.current = true;
-      recognitionRef.current.start();
-      
-      // Show initial AI message
-      setTimeout(() => {
-        showLiveTranscript('model', "I'm listening, Boss...", false);
-      }, 500);
-    } else {
-      // Fallback for browsers without speech recognition
-      showLiveTranscript('model', "Speech recognition not available in this browser.", true);
-    }
+    // TODO: Wire up Gemini Live session (shared with App.tsx desktop session)
   };
 
   const stopSession = () => {
     setIsInSession(false);
-    isListeningRef.current = false;
-    
-    // Stop speech recognition
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-    
     setCurrentTranscript(null);
     if (transcriptTimeoutRef.current) {
       clearTimeout(transcriptTimeoutRef.current);

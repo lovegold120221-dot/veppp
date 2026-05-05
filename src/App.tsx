@@ -1250,13 +1250,11 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   };
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
-  const recognitionRef = useRef<any>(null);
   const transcriptRef = useRef<{text: string, role: SpeakerRole} | null>(null);
   const transcriptTimeoutRef = useRef<any>(null);
   const lastSavedTranscriptRef = useRef<{ role: SpeakerRole, text: string, at: number } | null>(null);
   const isMutedRef = useRef(false);
   const isAgentSpeakingRef = useRef(false);
-  const recognitionManualStopRef = useRef(false);
   const isAgentSpeakingTimerRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1847,44 +1845,13 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                }
              }, 3000);
 
-             // Speech recognition for visual feedback
-             try {
-               const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-               if (SpeechRecognition && !recognitionRef.current) {
-                 recognitionRef.current = new SpeechRecognition();
-                 recognitionRef.current.continuous = true;
-                 recognitionRef.current.interimResults = true;
-                 recognitionRef.current.onresult = (event: any) => {
-                   let itx = '';
-                   let ftx = '';
-                   for (let i = event.resultIndex; i < event.results.length; ++i) {
-                     if (event.results[i].isFinal) ftx += event.results[i][0].transcript;
-                     else itx += event.results[i][0].transcript;
-                   }
-                    const tx = (ftx || itx).trim();
-                    if (tx && !isAgentSpeakingRef.current) {
-                      // User is speaking - record activity
-                      recordActivity();
-                      showLiveTranscript('user', tx, false);
-                    }
-
-                 };
-                  recognitionRef.current.onend = () => {
-                    if (isActive && !recognitionManualStopRef.current) {
-                      try { recognitionRef.current?.start(); } catch (e) {}
-                    }
-                  };
-                  recognitionRef.current.start();
-               }
-             } catch (e) {}
-
-             audioRecorderRef.current = new AudioRecorder((base64, rawData) => {
-              if (isMutedRef.current) return;
-              
-              // Process emotional analysis from raw audio data
-              if (rawData) {
-                try {
-                  // TODO: Fix emotional synthesis integration
+              audioRecorderRef.current = new AudioRecorder((base64, rawData) => {
+               if (isMutedRef.current) return;
+               
+               // Process emotional analysis from raw audio data
+               if (rawData) {
+                 try {
+                   // TODO: Fix emotional synthesis integration
                   // const audioFeatures = emotionalSynthesizerInstance.analyzeAudioFeatures(rawData, 16000);
                   // const emotionalState = emotionalSynthesizerInstance.synthesizeEmotion(audioFeatures);
                   // const context = emotionalSynthesizerInstance.getEmotionalContext();
@@ -2365,8 +2332,6 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                   }
                   setIsAgentSpeaking(false);
                   isAgentSpeakingRef.current = false;
-                  recognitionManualStopRef.current = false;
-                  try { recognitionRef.current?.start(); } catch (e) {}
                   audioRecorderRef.current?.resume();
                 }
                 const inputTranscription = msg.serverContent.inputTranscription;
@@ -2382,39 +2347,39 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                 const parts = msg.serverContent.modelTurn?.parts;
                 if (parts) {
                    const audio = parts.find(p => p.inlineData)?.inlineData?.data;
-                    if (audio) {
-                       audioStreamerRef.current?.addPCM16(audio);
-                       
-                       if (!isAgentSpeakingRef.current) {
-                         setIsAgentSpeaking(true);
-                         isAgentSpeakingRef.current = true;
-                         
-                         // Stop recognition and recorder to prevent echo
-                         recognitionManualStopRef.current = true;
-                         try { recognitionRef.current?.stop(); } catch (e) {}
-                         audioRecorderRef.current?.pause();
-                       }
+                     if (audio) {
+                        audioStreamerRef.current?.addPCM16(audio);
+                        
+                        if (!isAgentSpeakingRef.current) {
+                          setIsAgentSpeaking(true);
+                          isAgentSpeakingRef.current = true;
+                          
+                          // Pause recorder and send stream-end to prevent echo
+                          audioRecorderRef.current?.pause();
+                          try {
+                            sessionRef.current?.sendRealtimeInput?.({ audioStreamEnd: true });
+                          } catch {}
+                        }
 
-                       // Reset the timer for when the AI stops speaking
-                       if (isAgentSpeakingTimerRef.current) clearTimeout(isAgentSpeakingTimerRef.current);
-                       const playbackBufferMs = audioStreamerRef.current?.getBufferedDurationMs() || 0;
-                       isAgentSpeakingTimerRef.current = setTimeout(() => {
-                         setIsAgentSpeaking(false);
-                         isAgentSpeakingRef.current = false;
-                         recognitionManualStopRef.current = false;
-                         
-                         try { recognitionRef.current?.start(); } catch (e) {}
-                         audioRecorderRef.current?.resume();
-                       }, Math.max(2500, playbackBufferMs + 500));
-                    }
+                        // Reset the timer for when the AI stops speaking
+                        if (isAgentSpeakingTimerRef.current) clearTimeout(isAgentSpeakingTimerRef.current);
+                        const playbackBufferMs = audioStreamerRef.current?.getBufferedDurationMs() || 0;
+                        isAgentSpeakingTimerRef.current = setTimeout(() => {
+                          setIsAgentSpeaking(false);
+                          isAgentSpeakingRef.current = false;
+                          audioRecorderRef.current?.resume();
+                        }, Math.max(2500, playbackBufferMs + 500));
+                     }
                    const text = parts.find(p => p.text)?.text;
                    if (text?.trim()) {
                      showLiveTranscript('model', text, false);
                    }
                 }
-                if ((msg.serverContent as any).turnComplete && transcriptRef.current?.role === 'model') {
-                   saveTranscriptMessage('model', transcriptRef.current.text);
-                }
+                 if ((msg.serverContent as any).turnComplete) {
+                    // Both model and user transcripts are already saved when
+                    // their respective output/inputTranscription.finished
+                    // fires. No extra save needed here — avoids duplicates.
+                 }
              }
           },
           onclose: () => stopSession(),
@@ -2504,7 +2469,6 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
   };
 
   const stopSession = () => {
-    try { recognitionRef.current?.stop(); } catch (e) {}
     audioRecorderRef.current?.stop();
     audioStreamerRef.current?.stop();
     sessionRef.current?.close();
@@ -2517,7 +2481,6 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
     silenceFillerRef.current = null;
     isAgentSpeakingTimerRef.current = null;
     transcriptTimeoutRef.current = null;
-    recognitionManualStopRef.current = false;
     transcriptRef.current = null;
     setCurrentTranscript(null);
     // Keep the conversation log in the Office History sidebar — only the
