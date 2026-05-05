@@ -152,17 +152,14 @@ export class AudioStreamer {
 export class AudioRecorder {
   private audioContext: AudioContext | null = null;
   private stream: MediaStream | null = null;
-  private processor: ScriptProcessorNode | null = null;
+  private workletNode: AudioWorkletNode | null = null;
+  private monitorGain: GainNode | null = null;
   private onData: (base64: string, rawData?: Float32Array) => void;
   private isPaused: boolean = false;
   private source: MediaStreamAudioSourceNode | null = null;
   private analyser: AnalyserNode | null = null;
   private onAudioLevel?: (level: number) => void;
-  // Throttle counter for the visualizer level — we only need ~20Hz, not
-  // the ~128Hz that ScriptProcessorNode fires at. Burning the level
-  // calc on every audio frame was a measurable contributor to phone heat
-  // during 10-minute beta calls (#2).
-  private levelEmitCounter = 0;
+  private levelRafId: number | null = null;
 
   constructor(onData: (base64: string, rawData?: Float32Array) => void) {
     this.onData = onData;
@@ -170,6 +167,55 @@ export class AudioRecorder {
 
   setAudioLevelCallback(callback: (level: number) => void) {
     this.onAudioLevel = callback;
+  }
+
+  private arrayBufferToBase64(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  }
+
+  private startLevelLoop() {
+    if (this.levelRafId !== null || !this.analyser || !this.onAudioLevel) return;
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    let lastEmit = 0;
+
+    const tick = (now: number) => {
+      if (!this.analyser || !this.onAudioLevel) {
+        this.levelRafId = null;
+        return;
+      }
+
+      if (!this.isPaused && now - lastEmit >= 50) {
+        lastEmit = now;
+        this.analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i] * dataArray[i];
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        this.onAudioLevel(rms / 255);
+      } else if (this.isPaused) {
+        this.onAudioLevel(0);
+      }
+
+      this.levelRafId = requestAnimationFrame(tick);
+    };
+
+    this.levelRafId = requestAnimationFrame(tick);
+  }
+
+  private stopLevelLoop() {
+    if (this.levelRafId !== null) {
+      cancelAnimationFrame(this.levelRafId);
+      this.levelRafId = null;
+    }
+    this.onAudioLevel?.(0);
   }
 
   async start() {
@@ -210,75 +256,67 @@ export class AudioRecorder {
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.8;
 
-    this.processor = this.audioContext.createScriptProcessor(2048, 1, 1);
-    this.processor.onaudioprocess = (e) => {
-      // Skip processing if paused (AI is speaking)
-      if (this.isPaused) return;
+    if (!this.audioContext.audioWorklet) {
+      throw new Error('AudioWorklet is not supported by this browser.');
+    }
 
-      const input = e.inputBuffer.getChannelData(0);
-      
-      // Calculate audio level for visualization. ScriptProcessorNode at
-      // bufferSize=2048 / 16kHz fires ~7.8 callbacks/sec; we keep that
-      // here but throttle the analyser FFT + RMS work so the visualizer
-      // is updated at ~20Hz max even on faster hardware.
-      this.levelEmitCounter = (this.levelEmitCounter + 1) % 2;
-      if (this.levelEmitCounter === 0 && this.onAudioLevel && this.analyser) {
-        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-        this.analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i] * dataArray[i];
-        }
-        const rms = Math.sqrt(sum / dataArray.length);
-        const level = rms / 255; // Normalize to 0-1
-        this.onAudioLevel(level);
-      }
-      
-      const output = new Int16Array(input.length);
-      for (let i = 0; i < input.length; i++) {
-        const s = Math.max(-1, Math.min(1, input[i]));
-        output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      const buffer = new ArrayBuffer(output.length * 2);
-      const view = new DataView(buffer);
-      for (let i = 0; i < output.length; i++) {
-        view.setInt16(i * 2, output[i], true);
-      }
-      const bytes = new Uint8Array(buffer);
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      this.onData(btoa(binary), input.slice()); // Pass raw audio data for emotional analysis
+    await this.audioContext.audioWorklet.addModule('/audio-recorder-worklet.js');
+    this.workletNode = new AudioWorkletNode(this.audioContext, 'pcm-recorder-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+    this.workletNode.port.onmessage = (event) => {
+      if (this.isPaused || event.data?.type !== 'audio') return;
+      const pcmBuffer = event.data.pcm as ArrayBuffer | undefined;
+      const rawBuffer = event.data.raw as ArrayBuffer | undefined;
+      if (!pcmBuffer || !rawBuffer) return;
+      this.onData(this.arrayBufferToBase64(pcmBuffer), new Float32Array(rawBuffer));
     };
 
+    this.monitorGain = this.audioContext.createGain();
+    this.monitorGain.gain.value = 0;
     this.source.connect(this.analyser);
-    this.analyser.connect(this.processor);
-    this.processor.connect(this.audioContext.destination);
+    this.source.connect(this.workletNode);
+    this.workletNode.connect(this.monitorGain);
+    this.monitorGain.connect(this.audioContext.destination);
+    this.startLevelLoop();
   }
 
   pause() {
     this.isPaused = true;
+    this.workletNode?.port.postMessage({ type: 'setPaused', paused: true });
   }
 
   resume() {
     this.isPaused = false;
+    this.workletNode?.port.postMessage({ type: 'setPaused', paused: false });
   }
 
   stop() {
     this.isPaused = false;
-    if (this.processor && this.audioContext) {
-      this.processor.disconnect();
+    this.stopLevelLoop();
+    if (this.workletNode) {
+      try { this.workletNode.port.postMessage({ type: 'setPaused', paused: true }); } catch (e) {}
+      try { this.workletNode.disconnect(); } catch (e) {}
     }
-    if (this.source && this.audioContext) {
-      this.source.disconnect();
+    if (this.monitorGain) {
+      try { this.monitorGain.disconnect(); } catch (e) {}
+    }
+    if (this.analyser) {
+      try { this.analyser.disconnect(); } catch (e) {}
+    }
+    if (this.source) {
+      try { this.source.disconnect(); } catch (e) {}
     }
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
     }
     this.audioContext?.close();
     this.source = null;
-    this.processor = null;
+    this.workletNode = null;
+    this.monitorGain = null;
+    this.analyser = null;
     this.stream = null;
     this.audioContext = null;
   }

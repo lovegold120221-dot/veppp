@@ -260,14 +260,14 @@ export default function ArtifactPreview({ artifact, onClose }: Props) {
     company: 'Eburon AI',
     signer: 'Eburon AI Solutions Team',
     email: 'hello@eburon.ai',
-    address: '123 Innovation Drive, Austin, TX 78701, USA',
+    address: 'Not provided',
     ...(artifact.contractor || {}),
   };
   const client: ArtifactParty = {
-    company: 'Client Company',
-    signer: 'Client Signer',
-    email: 'client@example.com',
-    address: '123 Anywhere St., Any City, ST 12345',
+    company: 'Not provided',
+    signer: 'Not provided',
+    email: 'Not provided',
+    address: 'Not provided',
     ...(artifact.client || {}),
   };
 

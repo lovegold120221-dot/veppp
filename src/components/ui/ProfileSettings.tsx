@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, LogOut, Save, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { LANGUAGES, setStoredLanguage } from '../../lib/languages';
 
 interface AgentSettings {
   userName: string;
@@ -151,21 +152,15 @@ export default function ProfileSettings({
                   const newSettings = { ...localSettings, language: e.target.value };
                   setLocalSettings(newSettings);
                   onSettingsChange(newSettings);
+                  setStoredLanguage(e.target.value);
                 }}
                 title="Select language"
                 aria-label="Select language"
                 className="w-full rounded-[12px] border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-white focus:border-lime-300/50 focus:outline-none"
               >
-                <option value="English">English</option>
-                <option value="Spanish">Spanish</option>
-                <option value="French">French</option>
-                <option value="German">German</option>
-                <option value="Italian">Italian</option>
-                <option value="Portuguese">Portuguese</option>
-                <option value="Dutch">Dutch</option>
-                <option value="Japanese">Japanese</option>
-                <option value="Korean">Korean</option>
-                <option value="Chinese">Chinese</option>
+                {LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
               </select>
             </div>
 

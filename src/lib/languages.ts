@@ -5,6 +5,7 @@
 // value persisted in settings.language / localStorage.
 export const LANGUAGES: string[] = [
   'English',
+  'Babel',
   'Dutch',
   'Dutch (Flemish)',
   'Abkhaz',
@@ -257,7 +258,35 @@ export const LANGUAGES: string[] = [
 ];
 
 export const DEFAULT_LANGUAGE = 'English';
+export const BABEL_LANGUAGE = 'Babel';
 export const PREFERRED_LANGUAGE_KEY = 'preferredLanguage';
+
+export const isBabelLanguage = (language?: string): boolean =>
+  String(language || '').trim().toLowerCase() === BABEL_LANGUAGE.toLowerCase();
+
+export const getAssistantLanguageInstruction = (language: string = DEFAULT_LANGUAGE): string => {
+  const selectedLanguage = LANGUAGES.includes(language) ? language : DEFAULT_LANGUAGE;
+
+  if (isBabelLanguage(selectedLanguage)) {
+    return [
+      '### LANGUAGE MODE: BABEL / MULTILINGUAL',
+      '- Understand any language Boss uses, including mixed-language messages.',
+      '- Respond in the same language Boss is currently using.',
+      '- If Boss mixes languages, answer naturally in the same mix without forcing English.',
+      '- If Boss asks for translation or multiple languages, provide the requested multilingual output.',
+      '- Keep the office-persona tone intact in every language.',
+    ].join('\n');
+  }
+
+  return [
+    `### LANGUAGE MODE: NATIVE ${selectedLanguage.toUpperCase()}`,
+    `- Respond natively in ${selectedLanguage} by default because this is Boss's selected language.`,
+    '- Do not fall back to English unless Boss explicitly asks for English.',
+    '- Still understand and process requests in any language Boss uses.',
+    '- If Boss asks for translation or multilingual output, comply without changing the saved language.',
+    '- Keep tool results factual and translate summaries/errors into the selected language.',
+  ].join('\n');
+};
 
 export const getStoredLanguage = (): string => {
   try {

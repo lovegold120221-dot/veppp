@@ -24,15 +24,8 @@ export default function MobileMainScreen({ onChat, user, onLogout, settings }: M
   const handlePowerToggle = () => {
     setIsActive(!isActive);
     if (!isActive) {
-      // Start session
-      setTimeout(() => {
-        setIsSpeaking(true);
-        setTranscript("I'm good, boss, just her...");
-        setTimeout(() => {
-          setIsSpeaking(false);
-          setTranscript('');
-        }, 3000);
-      }, 1000);
+      setIsSpeaking(false);
+      setTranscript('');
     } else {
       // Stop session
       setIsSpeaking(false);

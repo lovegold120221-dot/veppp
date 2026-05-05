@@ -24,22 +24,7 @@ interface Transcription {
 }
 
 export default function MobileChatScreen({ onBack, user }: MobileChatScreenProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      sender: 'BEATRICE',
-      text: "I'm good, boss, just her...",
-      timestamp: Date.now() - 10000,
-      isOwn: false
-    },
-    {
-      id: '2',
-      sender: 'JO LERNOUT',
-      text: "Perfect. Get the team ready. We move in 5.",
-      timestamp: Date.now() - 5000,
-      isOwn: true
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   
   // Auto-scroll to bottom when messages change
   useEffect(() => {

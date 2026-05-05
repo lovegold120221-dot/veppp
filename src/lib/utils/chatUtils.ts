@@ -1,4 +1,5 @@
 import { ChatMessage, AgentSettings } from '../../lib/types';
+import { getAssistantLanguageInstruction } from '../languages';
 
 export type SpeakerRole = 'user' | 'model';
 
@@ -110,13 +111,5 @@ File handling:
 - Reference uploaded content in future responses as needed
 - Never claim to see content that isn't actually provided
 
-${language === 'Spanish' ? 'Responde siempre en español.' : ''}
-${language === 'French' ? 'Répondez toujours en français.' : ''}
-${language === 'German' ? 'Antworte immer auf Deutsch.' : ''}
-${language === 'Italian' ? 'Rispondi sempre in italiano.' : ''}
-${language === 'Portuguese' ? 'Responda sempre em português.' : ''}
-${language === 'Dutch' ? 'Antwoord altijd in het Nederlands.' : ''}
-${language === 'Japanese' ? '常に日本語で回答してください。' : ''}
-${language === 'Korean' ? '항상 한국어로 답변하세요.' : ''}
-${language === 'Chinese' ? '请始终用中文回答。' : ''}
+${getAssistantLanguageInstruction(language)}
 `;

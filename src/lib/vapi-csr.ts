@@ -1,17 +1,15 @@
 // Vapi CSR (outbound call) integration.
 //
 // Triggered by the Gemini Live agent when Boss says things like
-// "call this number", "phone Sarah about the demo", "follow up with that
+// "call this number", "phone Sarah about the project", "follow up with that
 // inquiry by phone". The CSR persona — "Beatrice as Jo Lernout's
 // personal secretary" — is configured server-side in Vapi as the
 // assistant referenced by DEFAULT_CSR_ASSISTANT_ID.
 //
 // SECURITY NOTE: The Vapi *private* key is what authenticates outbound
-// calls. Bundling it into the client exposes it to every visitor. The
-// hardcoded fallback below is a prototype convenience supplied by the
-// project owner — for production, set VITE_VAPI_PRIVATE_KEY="" and
-// proxy this request through a Firebase Cloud Function (or any backend
-// you trust). The same applies to VITE_VAPI_PHONE_NUMBER_ID.
+// calls. Bundling it into the client exposes it to every visitor. Configure
+// VITE_VAPI_PRIVATE_KEY from the environment only, ideally through a backend
+// proxy for production. The same applies to VITE_VAPI_PHONE_NUMBER_ID.
 const VAPI_API_BASE = 'https://api.vapi.ai';
 
 const env = (key: string): string => {
@@ -21,8 +19,7 @@ const env = (key: string): string => {
   return '';
 };
 
-const VAPI_PRIVATE_KEY: string =
-  env('VITE_VAPI_PRIVATE_KEY') || '98a575e6-f4c4-4908-ad05-e742379e361d';
+const VAPI_PRIVATE_KEY: string = env('VITE_VAPI_PRIVATE_KEY');
 
 const DEFAULT_CSR_ASSISTANT_ID = '8420b35d-70b0-4bd2-8f38-71b5f3ebb8eb';
 

@@ -11,10 +11,8 @@
 // before returning a "still rendering" status that the caller can use
 // to schedule a follow-up check.
 //
-// SECURITY: the API key authenticates billable video generation. The
-// hardcoded fallback below is a prototype convenience — for production,
-// proxy through a Firebase Cloud Function and remove the fallback so
-// the key never ships in the client bundle.
+// SECURITY: the API key authenticates billable video generation. It must
+// come from environment configuration only; never ship fallback secrets.
 
 const VIDEO_API_BASE = 'https://api.heygen.com/v3';
 
@@ -27,8 +25,7 @@ const env = (key: string): string => {
 
 const VIDEO_API_KEY: string =
   env('VITE_HEYGEN_API_KEY') ||
-  env('VITE_EBURON_VIDEO_API_KEY') ||
-  'sk_V2_hgu_k2bNyrINT8i_3zWoO8y1v9oVUNCCwUyUQSImsotLMeks';
+  env('VITE_EBURON_VIDEO_API_KEY');
 
 const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 90_000;

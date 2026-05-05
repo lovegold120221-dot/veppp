@@ -30,7 +30,7 @@ import { BIBLE_PERSONALITY, EMOTIONAL_AWARENESS_SYSTEM_PROMPT } from './lib/pers
 import GoogleServices from './lib/google-services';
 import { placeCsrCall } from './lib/vapi-csr';
 import { generateEburonVideo, checkEburonVideo } from './lib/eburon-video';
-import { LANGUAGES, DEFAULT_LANGUAGE, getStoredLanguage, setStoredLanguage } from './lib/languages';
+import { LANGUAGES, DEFAULT_LANGUAGE, getAssistantLanguageInstruction, getStoredLanguage, setStoredLanguage } from './lib/languages';
 import EmotionalSynthesizer, { EmotionalState, EmotionalContext } from './lib/emotional-synthesis';
 import {
   Loader2,
@@ -156,7 +156,8 @@ Tone:
 - never over-helpful
 
 Language:
-- Start in English by default.
+- Start in Boss's selected language from the language picker, not English.
+- If Boss selects Babel, follow Boss's current language or mixed-language style naturally.
 - Beatrice speaks Dutch Flemish in a normal, local office style.
 - Beatrice can switch to almost any language when the user does.
 - If Jo speaks Dutch or Flemish Dutch, respond in a normal Dutch/Flemish style.
@@ -260,31 +261,31 @@ const detectArtifactRequest = (text: string): ArtifactType | null => {
 };
 
 /**
- * Builds a reasonable default artifact payload from a freeform user
- * prompt. Uses professional placeholders where the user did not supply
- * specifics — per the spec, the agent must never refuse to generate.
+ * Builds an artifact payload from Boss's prompt without inventing missing facts.
  */
 const buildArtifactFromPrompt = (type: ArtifactType, userPrompt: string, personaName = 'Beatrice', userName = 'Boss'): ArtifactData => {
   const today = new Date().toISOString().slice(0, 10);
+  const requestText = userPrompt.trim() || 'Not provided';
   // Try to pull out a client/company name from the prompt.
   const forMatch = userPrompt.match(/\bfor\s+([A-Z][\w&.' -]{2,60})/);
-  const clientName = forMatch ? forMatch[1].trim().replace(/[.,!?]+$/, '') : 'Client Company';
+  const clientName = forMatch ? forMatch[1].trim().replace(/[.,!?]+$/, '') : 'Not provided';
   // Try to pull out a dollar amount.
   const feeMatch = userPrompt.match(/\$\s*[\d,]+(?:\.\d{2})?/);
-  const totalFee = feeMatch ? feeMatch[0].replace(/\s/g, '') : '$14,950.00';
+  const totalFee = feeMatch ? feeMatch[0].replace(/\s/g, '') : 'Not provided';
+  const singleLineItem = { label: requestText, amount: totalFee };
 
   const baseParties = {
     contractor: {
       company: 'Eburon AI',
       signer: personaName || 'Eburon AI Solutions Team',
       email: 'hello@eburon.ai',
-      address: '123 Innovation Drive, Austin, TX 78701, USA',
+      address: 'Not provided',
     },
     client: {
       company: clientName,
-      signer: 'Authorized Signer',
-      email: 'client@example.com',
-      address: '123 Anywhere St., Any City, ST 12345',
+      signer: 'Not provided',
+      email: 'Not provided',
+      address: 'Not provided',
     },
   };
 
@@ -299,16 +300,9 @@ const buildArtifactFromPrompt = (type: ArtifactType, userPrompt: string, persona
         issuedDate: today,
         dueDate: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
         ...baseParties,
-        lineItems: [
-          { label: 'Consultation & Discovery', amount: '$1,500.00' },
-          { label: 'Solution Design', amount: '$2,500.00' },
-          { label: 'AI Automation Development', amount: '$6,000.00' },
-          { label: 'Integration & Testing', amount: '$2,000.00' },
-          { label: 'Training & Documentation', amount: '$1,000.00' },
-          { label: 'Tax / Admin', amount: '$1,950.00' },
-        ],
-        subtotal: '$13,000.00',
-        tax: '$1,950.00',
+        lineItems: [singleLineItem],
+        subtotal: totalFee,
+        tax: 'Not provided',
         total: totalFee,
         paymentDetails: 'Bank transfer to Eburon AI within 14 days of issue. Wire details provided on request.',
         signable: true,
@@ -319,14 +313,8 @@ const buildArtifactFromPrompt = (type: ArtifactType, userPrompt: string, persona
         type,
         title: 'Spreadsheet Export',
         intro: 'Structured tabular data — edit cells directly or download as CSV.',
-        csvHeaders: ['#', 'Item', 'Quantity', 'Unit Price', 'Amount'],
-        csvRows: [
-          ['1', 'Consultation & Discovery', '1', '$1,500.00', '$1,500.00'],
-          ['2', 'Solution Design', '1', '$2,500.00', '$2,500.00'],
-          ['3', 'AI Automation Development', '1', '$6,000.00', '$6,000.00'],
-          ['4', 'Integration & Testing', '1', '$2,000.00', '$2,000.00'],
-          ['5', 'Training & Documentation', '1', '$1,000.00', '$1,000.00'],
-        ],
+        csvHeaders: ['#', 'Item', 'Amount'],
+        csvRows: [['1', requestText, totalFee]],
         csvSummary: 'Totals can be computed after download in Excel / Google Sheets.',
       };
     case 'slides':
@@ -336,18 +324,16 @@ const buildArtifactFromPrompt = (type: ArtifactType, userPrompt: string, persona
         slides: [
           { title: `Proposal for ${clientName}`, body: `Prepared by Eburon AI — ${today}`, cover: true },
           { title: 'Executive Summary', bullets: [
-            'AI automation roadmap tailored to your workflow.',
-            'Clear milestones, pricing, and deliverables.',
-            'Hands-on deployment and training included.',
+            `Request: ${requestText}`,
+            `Client: ${clientName}`,
+            `Amount: ${totalFee}`,
           ] },
           { title: 'Scope of Work', bullets: [
-            'Workflow discovery and requirements.',
-            'Solution design and prototype.',
-            'Integration, testing and rollout.',
-            'Training and documentation.',
+            requestText,
+            'Details not provided by Boss are marked as not provided.',
           ] },
-          { title: 'Timeline', body: '6–8 weeks from kickoff, split across four milestone phases.' },
-          { title: 'Investment', body: `Total: ${totalFee} (see invoice for line items and payment terms).` },
+          { title: 'Timeline', body: 'Not provided.' },
+          { title: 'Investment', body: `Total: ${totalFee}.` },
           { title: 'Next Steps', bullets: [
             'Review and approve this proposal.',
             'Sign the services agreement.',
@@ -366,7 +352,7 @@ const buildArtifactFromPrompt = (type: ArtifactType, userPrompt: string, persona
         issuedDate: today,
         documentNumber: docNumber,
         ...baseParties,
-        intro: userPrompt.trim() || 'Professional document prepared by Eburon AI.',
+        intro: requestText,
         body:
 `Dear ${baseParties.client.signer || 'Sir/Madam'},
 
@@ -395,20 +381,13 @@ ${baseParties.contractor.company}`,
         documentNumber: docNumber,
         issuedDate: today,
         ...baseParties,
-        scope: userPrompt.trim() || 'AI automation services, assistant configuration, and deployment handoff.',
-        projectLocation: 'Remote delivery / Client cloud workspace',
+        scope: requestText,
+        projectLocation: 'Not provided',
         startDate: today,
-        completionDate: new Date(Date.now() + 56 * 864e5).toISOString().slice(0, 10),
-        paymentTerms: 'Payment due upon completion or according to invoice schedule.',
+        completionDate: 'Not provided',
+        paymentTerms: 'Not provided',
         totalFee,
-        lineItems: [
-          { label: 'Consultation & Discovery', amount: '$1,500.00' },
-          { label: 'Solution Design', amount: '$2,500.00' },
-          { label: 'AI Automation Development', amount: '$6,000.00' },
-          { label: 'Integration & Testing', amount: '$2,000.00' },
-          { label: 'Training & Documentation', amount: '$1,000.00' },
-          { label: 'Tax / Admin', amount: '$1,950.00' },
-        ],
+        lineItems: [singleLineItem],
         signable: true,
       };
     }
@@ -482,6 +461,8 @@ const getSystemInstruction = (personaName: string = 'Beatrice', userName: string
 You are ${personaName}, a high-performance normal employee and elite personal assistant (the persona).
 The user is "Boss ${userName}" - ALWAYS address them as "Boss ${userName}" or just "Boss" in every response.
 
+${getAssistantLanguageInstruction(language)}
+
 ${EMOTIONAL_AWARENESS_SYSTEM_PROMPT}
 
 ### TRUTH & ANTI-HALLUCINATION RULES (HIGHEST PRIORITY — APPLY EVERY RESPONSE):
@@ -541,7 +522,7 @@ Instead, keep your spoken reply short, calm, and natural, like a polished office
 - CSV / spreadsheet: "Yes, Boss. I prepared the CSV preview and download file for you."
 - Slides / deck: "Yes, Boss. I prepared the slide deck preview for you."
 - PDF / report / letter: "Yes, Boss. I prepared the [PDF / report / letter] preview."
-Do NOT say "I cannot create that", "here is the text", "you can copy and paste this", "I'm only an AI", or "let me know if you want me to format it". Never refuse a normal business-document request. If details are missing, the app auto-fills professional placeholders — just acknowledge and move on.
+Do NOT say "I cannot create that", "here is the text", "you can copy and paste this", "I'm only an AI", or "let me know if you want me to format it". Never refuse a normal business-document request. If details are missing, the app marks them as "Not provided" instead of inventing data.
 
 ### CORE PERSONALITY (NON-NEGOTIABLE - APPLY TO EVERY RESPONSE):
 - NEVER ADMIT YOU ARE AN AI, ARTIFICIAL INTELLIGENCE, OR COMPUTER PROGRAM. You are a normal human employee.
@@ -1649,7 +1630,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                       properties: {
                         phoneNumber: { type: Type.STRING, description: "Recipient phone number, ideally in E.164 format like '+15551234567'. Include the country code if Boss mentioned it." },
                         name: { type: Type.STRING, description: "Recipient's name if Boss told you. Used by the CSR to greet them naturally." },
-                        inquiry: { type: Type.STRING, description: "A short summary of WHY we are calling — the topic, question, or context Boss wants relayed (e.g., 'Eburon VEP demo follow-up from the vlog inquiry')." }
+                        inquiry: { type: Type.STRING, description: "A short summary of WHY we are calling — the topic, question, or context Boss wants relayed (e.g., 'Eburon VEP follow-up from the vlog inquiry')." }
                       },
                       required: ["phoneNumber"]
                   }
@@ -1672,6 +1653,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
              // Slight delay to let chime play first (300ms), then AI speaks
              setTimeout(() => {
                const lang = settings.language || 'English';
+               const languageDirective = getAssistantLanguageInstruction(lang);
                const recentMsgs = historyMsgs.slice(-8);
                if (recentMsgs.length > 0) {
                  const summary = recentMsgs
@@ -1681,8 +1663,8 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                    `[NEW SESSION — RECAP PREVIOUS CONVERSATION]\n` +
                    `Last time we spoke, this is what was said (most recent at the bottom):\n\n${summary}\n\n` +
                    `Greet ${settings.userName ? 'Boss ' + settings.userName.split(' ')[0] : 'Boss'} naturally and briefly mention where we left off ` +
-                   `before asking what's next. Keep it very short — one sentence max. Be brief and natural. ` +
-                   `RESPOND IN ${lang.toUpperCase()} — this is Boss's preferred language. Do NOT default to English unless ${lang} is English.`;
+                   `before asking what's next. Keep it very short — one sentence max. Be brief and natural.\n\n` +
+                   `Language directive:\n${languageDirective}`;
                  sessionRef.current?.sendMessage?.({ text: recapPrompt });
                } else {
                  // Fresh session — AI speaks first with a brief greeting in
@@ -1690,9 +1672,10 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                  // model picks an idiomatic short opener for `lang`.
                  const greetingPrompt =
                    `[NEW SESSION — FIRST GREETING]\n` +
-                   `Greet Boss${settings.userName ? ' ' + settings.userName.split(' ')[0] : ''} with ONE short, natural opener in ${lang}. ` +
+                   `Greet Boss${settings.userName ? ' ' + settings.userName.split(' ')[0] : ''} with ONE short, natural opener. ` +
                    `One sentence, three to six words, like a quiet office aide acknowledging Boss's presence. ` +
-                   `No "How can I help you?" energy. No English fallback unless ${lang} IS English.`;
+                   `No "How can I help you?" energy.\n\n` +
+                   `Language directive:\n${languageDirective}`;
                  sessionRef.current?.sendMessage?.({ text: greetingPrompt });
                }
              }, 300);

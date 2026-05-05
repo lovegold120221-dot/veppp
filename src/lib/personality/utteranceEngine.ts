@@ -12,6 +12,7 @@ export class DynamicUtteranceEngine {
   private config: UtteranceEngineConfig;
   private contextMemory: Map<string, any> = new Map();
   private utterancePatterns: Map<string, string[]> = new Map();
+  private sessionStartedAt = Date.now();
 
   constructor(config: Partial<UtteranceEngineConfig> = {}) {
     this.config = {
@@ -356,8 +357,7 @@ export class DynamicUtteranceEngine {
   }
 
   private getSessionDuration(): number {
-    // This would be calculated from actual session start time
-    return Math.random() * 3600; // Random for demo
+    return Math.max(0, (Date.now() - this.sessionStartedAt) / 1000);
   }
 
   // Pattern management
