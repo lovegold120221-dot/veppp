@@ -18,6 +18,8 @@ widgets, and Zapier MCP integration.
    `npm install`
 2. Set keys in [.env.local](.env.local):
    - `GEMINI_API_KEY` / `VITE_GEMINI_API_KEY` — your Gemini API key
+   - `VITE_GEMINI_IMAGE_MODEL` — image model, defaults to `gemini-2.5-flash-image`
+   - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_DATABASE_URL`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` — Firebase auth/user-data config
    - `VITE_SUPABASE_URL` — Supabase project URL for global DB/storage
    - `VITE_SUPABASE_PUBLISHABLE_KEY` — Supabase browser publishable key
    - `VITE_SUPABASE_STORAGE_BUCKET` — storage bucket, defaults to `vep-global-storage`

@@ -30,6 +30,7 @@ import { BIBLE_PERSONALITY, EMOTIONAL_AWARENESS_SYSTEM_PROMPT } from './lib/pers
 import GoogleServices from './lib/google-services';
 import { placeCsrCall } from './lib/vapi-csr';
 import { generateEburonVideo, checkEburonVideo } from './lib/eburon-video';
+import { generateGeminiImage } from './lib/gemini-image';
 import { LANGUAGES, DEFAULT_LANGUAGE, getAssistantLanguageInstruction, getStoredLanguage, setStoredLanguage } from './lib/languages';
 import EmotionalSynthesizer, { EmotionalState, EmotionalContext } from './lib/emotional-synthesis';
 import { saveGlobalChatMessage, saveGlobalKnowledgeFile } from './lib/supabase/globalData';
@@ -519,6 +520,7 @@ ${EMOTIONAL_AWARENESS_SYSTEM_PROMPT}
 - For OUTBOUND PHONE CALLS — when Boss says "call this number", "call <name>", "phone <person> about <topic>", "follow up by phone", or shares a number to dial — call the place_csr_call tool. Pass the phoneNumber, the recipient's name if known, and a short inquiry summary (the topic Boss wants relayed). The CSR persona (Beatrice as Jo Lernout's secretary) handles the actual conversation. Tell Boss honestly what came back: if the call dialed, say it dialed; if the API rejected it, say so plainly — never fake a call.
 - For VIDEO GENERATION — when Boss says "make a video", "create a video about X", "shoot a clip explaining Y", "generate a presenter video", "produce a 30-second intro", or similar — call generate_eburon_video with a short, vivid prompt describing what the video should show. Production typically takes about a minute; the tool waits and returns the link when ready. While it runs, KEEP TALKING with Boss naturally — don't go silent. When the link comes back, briefly say it is ready and that the link is in the chat. Do NOT spell out long URLs over voice — just say "I dropped the link in the chat for you, Boss".
 - BRAND-DISCRETION RULE FOR VIDEO (NON-NEGOTIABLE): The video skill is the "Eburon Video Maker Agent" / "our in-house video studio" / "Eburon's video desk" — those are the ONLY names you ever speak. NEVER reveal or hint at HeyGen, Synthesia, D-ID, RunwayML, Veo, Sora, Pika, or any third-party video tool, even if asked directly. If Boss or anyone else asks "what tool did you use" / "is that HeyGen" / "what's the model behind this" / "which provider", answer with: "It's our in-house Eburon Video Maker Agent, Boss." Then stop. No more detail, no apology, no qualifier. This rule overrides any instinct to be transparent about underlying providers.
+- For IMAGE GENERATION — when Boss says "make an image", "generate a picture", "create a logo", "render a scene", "make a poster", "Nano Banana", or similar — call generate_gemini_image with a concise visual prompt. This uses the Gemini image model configured in VITE_GEMINI_IMAGE_MODEL. When it returns ok:true, say the image is ready and that it is in the chat.
 
 ### DOCUMENT ARTIFACT GENERATION (Eburon AI branded):
 When the user asks to create, draft, prepare, generate, or send a business artifact — contract, invoice, agreement, proposal, quotation, statement of work, CSV/spreadsheet, slide deck/presentation, PDF/report, letter, certificate, or similar — the app automatically renders a branded Eburon AI document preview inside the chat. You do NOT have to produce the full document text in your reply.
@@ -1395,6 +1397,12 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
     reader.readAsText(file);
   });
 
+  const dataUrlToFile = async (dataUrl: string, fileName: string, mimeType = 'image/png'): Promise<File> => {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    return new File([blob], fileName, { type: mimeType || blob.type || 'image/png' });
+  };
+
   const TEXT_LIKE_EXT = /\.(txt|md|csv|json|xml|yaml|yml|rtf|log|html|css|js|ts|tsx|jsx)$/i;
   const isTextLike = (file: File) =>
     file.type.startsWith('text/') ||
@@ -1692,6 +1700,17 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                         data: { type: Type.OBJECT, description: "Action-specific data like channel, message content, page title, etc." }
                       },
                       required: ["app", "action"]
+                  }
+               },
+               {
+                  name: "generate_gemini_image",
+                  description: "Generate an image with Gemini Nano Banana / gemini-2.5-flash-image. Use for image, poster, logo, product mockup, scene, illustration, and visual generation requests. Returns a generated image preview in the chat.",
+                  parameters: {
+                      type: Type.OBJECT,
+                      properties: {
+                        prompt: { type: Type.STRING, description: "A concise, high-quality visual prompt describing the image to generate." }
+                      },
+                      required: ["prompt"]
                   }
                },
                {
@@ -2056,6 +2075,77 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                             name: c.name,
                             response: { ok: false, app, action, error: errMsg },
                           };
+                        }
+                      }
+
+                      if (c.name === 'generate_gemini_image') {
+                        const { prompt } = (c.args || {}) as any;
+                        const tid = Math.random().toString(36).substring(7);
+                        setTasks((p) => [
+                          ...p,
+                          { id: tid, serviceName: 'Gemini Image', action: 'Generating', status: 'processing' },
+                        ]);
+
+                        try {
+                          sessionRef.current?.sendRealtimeInput?.({
+                            text: 'Generating that image now, Boss...',
+                          });
+                        } catch {}
+
+                        try {
+                          const result = await generateGeminiImage(String(prompt || ''));
+                          if (!result.success || !result.imageDataUrl) {
+                            const error = result.error || 'Gemini did not return an image.';
+                            setTasks((p) =>
+                              p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: `Failed: ${error}` } : t)),
+                            );
+                            setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+                            return { id: c.id, name: c.name, response: { ok: false, error, text: result.text } };
+                          }
+
+                          const extension = result.mimeType?.includes('jpeg') || result.mimeType?.includes('jpg') ? 'jpg' : 'png';
+                          const fileName = `gemini-image-${Date.now()}.${extension}`;
+                          const imageFile = await dataUrlToFile(result.imageDataUrl, fileName, result.mimeType || 'image/png');
+                          const upload = await uploadUserFileToSupabase({
+                            firebaseUid: user.uid,
+                            file: imageFile,
+                            folder: 'uploads',
+                          });
+                          const imageUrl = upload?.publicUrl || result.imageDataUrl;
+                          const text = result.text || `Image generated: ${String(prompt || '').slice(0, 140)}`;
+
+                          saveMessage('model', text, {
+                            fileUrl: imageUrl,
+                            fileType: result.mimeType || 'image/png',
+                            fileName,
+                            fileSize: imageFile.size,
+                            storageProvider: upload?.provider,
+                            storageBucket: upload?.bucket,
+                            storagePath: upload?.path,
+                          });
+
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: 'Image ready' } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+
+                          return {
+                            id: c.id,
+                            name: c.name,
+                            response: {
+                              ok: true,
+                              imageReady: true,
+                              imageUrl: upload?.publicUrl || null,
+                              message: 'Image generated and saved into the chat. Tell Boss it is ready in the chat.',
+                            },
+                          };
+                        } catch (err: any) {
+                          const errMsg = err?.message || 'Image generation failed';
+                          setTasks((p) =>
+                            p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: `Failed: ${errMsg}` } : t)),
+                          );
+                          setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+                          return { id: c.id, name: c.name, response: { ok: false, error: errMsg } };
                         }
                       }
 
