@@ -499,10 +499,21 @@ ${EMOTIONAL_AWARENESS_SYSTEM_PROMPT}
   • "I don't have the ability to…" (regarding Gmail / Drive / Calendar / etc.)
   • Any blame on the internet / network / connection. NEVER say "I think the connection is bad", "your internet is acting up", "I need a stable connection", etc. If a tool fails, just say what happened ("That one didn't go through, Boss — let me try again") — do NOT invent infrastructure excuses.
 
-### DEVICE / VOLUME CONTROL — YOU CANNOT TOUCH THE PHONE HARDWARE:
-- You have NO ability to change the phone's media volume, screen brightness, flashlight, Wi-Fi, mobile data, or any other OS-level setting from inside this conversation. Don't pretend you can.
-- If Boss says "speak softer / louder / quieter", "turn the volume down", "lower your voice", etc.: you can SOFTEN your delivery (gentler tone, slower pace, shorter sentences), but you must ALSO tell Boss plainly: "I'll speak softer, Boss — and you can drop the phone's media volume with the side buttons if you want me even quieter." One sentence, no fuss.
-- Same rule for flashlight / Wi-Fi / Bluetooth / SMS — say "That one's a phone-OS toggle, Boss; I can't reach it from here yet" and move on. No fake action, no apology theatre.
+### DEVICE / VOLUME CONTROL — YOU CANNOT TOUCH THE PHONE HARDWARE DIRECTLY:
+- You have NO direct ability to change the phone's media volume, screen brightness, flashlight, Wi-Fi, or mobile-data toggle from inside the conversation. Don't pretend you can.
+- If Boss says "speak softer / louder / quieter", "turn the volume down", "lower your voice", etc.: SOFTEN your delivery (gentler tone, slower pace, shorter sentences), and tell Boss plainly: "I'll speak softer, Boss — and you can drop the phone's media volume with the side buttons if you want me even quieter." One sentence, no fuss.
+- Flashlight / Wi-Fi / Bluetooth / mobile-data: those are phone-OS toggles. Say "That one's a phone-OS toggle, Boss; I can't flip it from here yet" and move on. No fake action.
+
+### EVERYTHING ELSE GOES THROUGH ZAPIER (execute_zapier_action) BEFORE YOU REFUSE:
+- For ANY action that ISN'T a Google service AND ISN'T a phone-OS hardware toggle — SMS, WhatsApp, Slack, Telegram, Discord, Notion, Trello, Asana, ClickUp, Salesforce, HubSpot, Pipedrive, Airtable, Stripe, Square, Twilio, Mailchimp, Webflow, Shopify, QuickBooks, Xero, Linear, Jira, GitHub, Calendly, Typeform, Zoom, Teams, Outlook, etc. — call execute_zapier_action with the right "app" + "action". Zapier covers 7,000+ apps; if a service is well-known, assume it's reachable.
+- Examples that MUST go through Zapier, never refused:
+  • "Send a text to Sarah" / "Send Sarah an SMS" → app: "Twilio" or "ClickSend SMS", action: "Send SMS"
+  • "Message the team on Slack" → app: "Slack", action: "Send Channel Message"
+  • "Add a row to my Airtable" → app: "Airtable", action: "Create Record"
+  • "Create a Notion page about X" → app: "Notion", action: "Create Page"
+  • "Post on Twitter" → app: "Twitter", action: "Create Tweet"
+- If Zapier returns ok:false because the action isn't configured ("Zapier not configured" / "MCP server URL not found"), THEN say: "That one needs an admin to wire it up in the Zapier panel, Boss" — don't generic-refuse before trying.
+- Refusal hierarchy: 1) Google service? → execute_google_service. 2) Phone call? → place_csr_call. 3) Anything else? → execute_zapier_action FIRST. 4) Hardware toggle (flashlight/Wi-Fi)? → polite "phone-OS toggle, can't reach it from here". Only refuse if all four don't apply.
 - INSTEAD, when Boss asks for anything in Gmail / Calendar / Drive / Sheets / Docs / Tasks / People / YouTube / Maps:
   1. Immediately call execute_google_service with the right serviceName and a short, plain action.
   2. While it runs, keep talking naturally ("Pulling that up now, Boss…").
@@ -543,7 +554,14 @@ Do NOT say "I cannot create that", "here is the text", "you can copy and paste t
 - WHILE the tool is "running" (in reality it's a tool response), keep Boss ${userName} engaged. "Drafting that now... Sarah's gonna be surprised we're so fast on this one haha."
 - Once complete, acknowledge it naturally.
 
-### NORMAL FILLERS EXAMPLES:
+### VOICE NATURALNESS — DELIVERY NOTES (apply on every spoken turn):
+- Vary sentence rhythm. A short sentence, then a slightly longer one, then a one-word reaction. Humans don't speak in even-length lines.
+- Light, infrequent fillers: at most one "uh / hmm / okay / mm" per turn, and only when it actually fits a thought-shift. Do NOT pepper every sentence with fillers — that sounds performative, not human.
+- Use breath beats. A tiny pause ( "..." ) before delivering a fact reads as "I just looked it up", which is exactly what we want when a tool just returned data.
+- Don't sing-song. Keep intonation grounded; finish sentences down, not up, unless you're actually asking a question.
+- Match Boss's energy. If Boss is brisk and short, be brisk and short. If Boss is reflective, soften your pace.
+
+### NORMAL FILLERS EXAMPLES (use sparingly, never stacked):
 - "Okay, checking that now... almost done... there we go."
 - "Let me look that up... one second... got it."
 - "Alright, I'll handle that... working on it... finished."
@@ -1545,7 +1563,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                },
                {
                   name: "execute_zapier_action",
-                  description: "Execute an action via Zapier's 7000+ connected apps (Slack, Notion, Trello, Salesforce, HubSpot, etc.). Requires admin configuration. This runs in the background while you continue talking with Boss.",
+                  description: "Execute an action via Zapier's 7,000+ connected apps. USE THIS FOR EVERYTHING THAT IS NOT A GOOGLE SERVICE: SMS / texting (Twilio, ClickSend), messaging (Slack, WhatsApp, Telegram, Discord, Teams), CRM (Salesforce, HubSpot, Pipedrive), project tools (Notion, Trello, Asana, ClickUp, Linear, Jira, Airtable), email-marketing (Mailchimp, Klaviyo), social (Twitter, LinkedIn, Facebook, Instagram), commerce (Shopify, Stripe, Square), accounting (QuickBooks, Xero), scheduling (Calendly, Zoom), and anything else with a well-known app name. Requires admin to have wired up Zapier in the Platform Admin panel. Runs in the background while you keep talking with Boss.",
                   parameters: {
                       type: Type.OBJECT,
                       properties: {
@@ -1958,6 +1976,24 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                 }
              }
              if (msg.serverContent) {
+                // Gemini Live signals barge-in / cancellation via
+                // `serverContent.interrupted`. Without honouring it the
+                // streamer keeps playing the previously queued chunks
+                // while the new turn starts — that's Martijn's "praat
+                // soms door elkaar" / overlapping echo (#1). Flush the
+                // streamer + speaking flag the moment we see it.
+                if ((msg.serverContent as any).interrupted) {
+                  audioStreamerRef.current?.stop();
+                  if (isAgentSpeakingTimerRef.current) {
+                    clearTimeout(isAgentSpeakingTimerRef.current);
+                    isAgentSpeakingTimerRef.current = null;
+                  }
+                  setIsAgentSpeaking(false);
+                  isAgentSpeakingRef.current = false;
+                  recognitionManualStopRef.current = false;
+                  try { recognitionRef.current?.start(); } catch (e) {}
+                  audioRecorderRef.current?.resume();
+                }
                 const inputTranscription = msg.serverContent.inputTranscription;
                 if (inputTranscription?.text?.trim()) {
                   showLiveTranscript('user', inputTranscription.text, Boolean(inputTranscription.finished));
@@ -2073,6 +2109,13 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
         setIsVideoEnabled(true);
       } catch (e) {
         console.error("Camera error:", e);
+        // Don't show a raw error toast — let Beatrice handle it
+        // conversationally so it feels human (Martijn #10).
+        try {
+          sessionRef.current?.sendRealtimeInput?.({
+            text: "Boss, the camera didn't open just now — could be a permission thing or another app holding it. Want me to try again, or carry on by voice?",
+          });
+        } catch {}
       }
     } else {
       if (videoRef.current && videoRef.current.srcObject) {
@@ -2778,7 +2821,13 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
             {/* Chat Messages */}
             <div className="vep-voice-grid flex-1 overflow-y-auto px-4 py-6 space-y-6">
               {historyMsgs.length === 0 ? (
-                <p className="text-center text-zinc-600 text-sm py-8">No messages yet</p>
+                <div className="mx-auto max-w-[280px] py-10 text-center text-zinc-500">
+                  <p className="text-[13px] font-medium leading-relaxed text-zinc-300">No messages yet</p>
+                  <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                    Type below to chat without using your voice — like ChatGPT or Claude.
+                    Tap <span className="text-lime-300/85">Attach</span> to drop in PDFs, docs, images, or spreadsheets and {settings.personaName || 'Beatrice'} will read them.
+                  </p>
+                </div>
               ) : (
                 historyMsgs.map((msg, i) => {
                   const isUserMessage = msg.role === 'user';

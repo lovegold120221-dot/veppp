@@ -1,12 +1,17 @@
 export class AudioStreamer {
   private audioContext: AudioContext | null = null;
-  private source: AudioBufferSourceNode | null = null;
+  // Track EVERY scheduled source so we can stop them all on interrupt.
+  // The previous design kept only `this.source` (the latest chunk), so
+  // when the user barged in mid-utterance we'd silence the head while
+  // earlier queued buffers kept playing — that's Martijn's "the AI
+  // talks over its previous self" / echo report (#1).
+  private activeSources: Set<AudioBufferSourceNode> = new Set();
   private queue: Float32Array[] = [];
   private isPlaying = false;
   private sampleRate = 24000;
   private scheduledTime = 0;
   private analyser: AnalyserNode | null = null;
-  private levelTimer: number | null = null;
+  private levelRafId: number | null = null;
   private onAiLevel?: (level: number) => void;
 
   async init(sampleRate = 24000) {
@@ -14,7 +19,6 @@ export class AudioStreamer {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
       sampleRate,
     });
-    // Output analyser for real-time AI playback level (0..1).
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.7;
@@ -23,17 +27,41 @@ export class AudioStreamer {
 
   setAiLevelCallback(cb: (level: number) => void) {
     this.onAiLevel = cb;
-    if (this.levelTimer) return;
-    // Sample at ~30Hz so the visualizer reacts smoothly.
-    this.levelTimer = window.setInterval(() => {
-      if (!this.analyser || !this.onAiLevel) return;
-      const buf = new Uint8Array(this.analyser.frequencyBinCount);
+    // The level loop now starts/stops with playback (in playNext / stop /
+    // playback completion). No more 30Hz interval that runs forever and
+    // contributes to phone heat (#2).
+  }
+
+  private startLevelLoop() {
+    if (this.levelRafId !== null) return;
+    const buf = new Uint8Array(this.analyser?.frequencyBinCount ?? 0);
+    const tick = () => {
+      if (!this.analyser || !this.onAiLevel) {
+        this.levelRafId = null;
+        return;
+      }
       this.analyser.getByteFrequencyData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-      const rms = Math.sqrt(sum / buf.length) / 255;
+      const rms = Math.sqrt(sum / Math.max(1, buf.length)) / 255;
       this.onAiLevel(rms);
-    }, 32);
+      // Continue only while we still have audio playing or queued.
+      if (this.isPlaying || this.queue.length > 0 || this.activeSources.size > 0) {
+        this.levelRafId = requestAnimationFrame(tick);
+      } else {
+        this.levelRafId = null;
+        this.onAiLevel(0);
+      }
+    };
+    this.levelRafId = requestAnimationFrame(tick);
+  }
+
+  private stopLevelLoop() {
+    if (this.levelRafId !== null) {
+      cancelAnimationFrame(this.levelRafId);
+      this.levelRafId = null;
+    }
+    this.onAiLevel?.(0);
   }
 
   addPCM16(base64: string) {
@@ -71,43 +99,53 @@ export class AudioStreamer {
     const chunk = this.queue.shift()!;
     const audioBuffer = this.audioContext.createBuffer(1, chunk.length, this.sampleRate);
     audioBuffer.getChannelData(0).set(chunk);
-    
-    this.source = this.audioContext.createBufferSource();
-    this.source.buffer = audioBuffer;
+
+    const source = this.audioContext.createBufferSource();
+    source.buffer = audioBuffer;
     if (this.analyser) {
-      this.source.connect(this.analyser);
+      source.connect(this.analyser);
     } else {
-      this.source.connect(this.audioContext.destination);
+      source.connect(this.audioContext.destination);
     }
-    
+
     const currentTime = this.audioContext.currentTime;
     if (this.scheduledTime < currentTime) {
       this.scheduledTime = currentTime;
     }
-    
-    this.source.start(this.scheduledTime);
+
+    this.activeSources.add(source);
+    source.onended = () => {
+      this.activeSources.delete(source);
+      // Once everything has drained, stop the level loop so the
+      // visualizer doesn't keep ticking idle.
+      if (this.activeSources.size === 0 && this.queue.length === 0 && !this.isPlaying) {
+        this.stopLevelLoop();
+      }
+    };
+
+    source.start(this.scheduledTime);
     this.scheduledTime += audioBuffer.duration;
-    
-    // Play next seamlessly, not perfect but avoids large gaps
+
+    if (this.onAiLevel) this.startLevelLoop();
+
+    // Schedule the next chunk just before the current one ends.
     setTimeout(() => {
-        this.playNext();
-    }, (audioBuffer.duration * 1000) - 20); 
+      this.playNext();
+    }, Math.max(0, (audioBuffer.duration * 1000) - 20));
   }
 
   stop() {
+    // Drain the queue AND silence every source we have outstanding.
     this.queue = [];
-    if (this.source) {
-      try {
-        this.source.stop();
-      } catch (e) {}
-    }
+    this.activeSources.forEach((s) => {
+      try { s.onended = null; } catch (e) {}
+      try { s.stop(); } catch (e) {}
+      try { s.disconnect(); } catch (e) {}
+    });
+    this.activeSources.clear();
     this.isPlaying = false;
     this.scheduledTime = 0;
-    if (this.levelTimer) {
-      clearInterval(this.levelTimer);
-      this.levelTimer = null;
-    }
-    this.onAiLevel?.(0);
+    this.stopLevelLoop();
   }
 }
 
@@ -120,6 +158,11 @@ export class AudioRecorder {
   private source: MediaStreamAudioSourceNode | null = null;
   private analyser: AnalyserNode | null = null;
   private onAudioLevel?: (level: number) => void;
+  // Throttle counter for the visualizer level — we only need ~20Hz, not
+  // the ~128Hz that ScriptProcessorNode fires at. Burning the level
+  // calc on every audio frame was a measurable contributor to phone heat
+  // during 10-minute beta calls (#2).
+  private levelEmitCounter = 0;
 
   constructor(onData: (base64: string, rawData?: Float32Array) => void) {
     this.onData = onData;
@@ -174,12 +217,14 @@ export class AudioRecorder {
 
       const input = e.inputBuffer.getChannelData(0);
       
-      // Calculate audio level for visualization
-      if (this.onAudioLevel && this.analyser) {
+      // Calculate audio level for visualization. ScriptProcessorNode at
+      // bufferSize=2048 / 16kHz fires ~7.8 callbacks/sec; we keep that
+      // here but throttle the analyser FFT + RMS work so the visualizer
+      // is updated at ~20Hz max even on faster hardware.
+      this.levelEmitCounter = (this.levelEmitCounter + 1) % 2;
+      if (this.levelEmitCounter === 0 && this.onAudioLevel && this.analyser) {
         const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
         this.analyser.getByteFrequencyData(dataArray);
-        
-        // Calculate RMS (Root Mean Square) for smooth level
         let sum = 0;
         for (let i = 0; i < dataArray.length; i++) {
           sum += dataArray[i] * dataArray[i];
