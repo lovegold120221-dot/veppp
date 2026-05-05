@@ -12,6 +12,8 @@ interface AgentSettings {
   selectedVoice: string;
   language: string;
   serviceProviders?: Record<string, 'direct' | 'zapier'>;
+  translatorMode?: boolean;
+  translatorLanguage?: string;
 }
 
 interface ProfileSettingsProps {
@@ -204,6 +206,57 @@ export default function ProfileSettings({
                 rows={4}
                 placeholder="Any personality preferences or notes..."
               />
+            </div>
+
+            {/* Translator Mode */}
+            <div className="pt-4 border-t border-white/[0.06]">
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-[12px] font-black uppercase tracking-[0.16em] text-white/60">
+                  Translator Mode
+                </label>
+                <div
+                  onClick={() => {
+                    const next = { ...localSettings, translatorMode: !localSettings.translatorMode };
+                    setLocalSettings(next);
+                    onSettingsChange(next);
+                  }}
+                  className={`relative h-6 w-11 cursor-pointer rounded-full transition-colors ${
+                    localSettings.translatorMode ? 'bg-lime-400' : 'bg-zinc-700'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                      localSettings.translatorMode ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-zinc-500 mb-3">
+                When ON, the live session switches into a pure translator with no persona intro or extro — just the translated text.
+              </p>
+              <label className="block text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500 mb-1.5">
+                Target Language
+              </label>
+              <select
+                value={localSettings.translatorLanguage || 'English'}
+                onChange={(e) => {
+                  const next = { ...localSettings, translatorLanguage: e.target.value };
+                  setLocalSettings(next);
+                  onSettingsChange(next);
+                }}
+                disabled={!localSettings.translatorMode}
+                title="Select translator target language"
+                aria-label="Select translator target language"
+                className={`w-full rounded-[12px] border px-4 py-3 text-white focus:border-lime-300/50 focus:outline-none appearance-none ${
+                  localSettings.translatorMode
+                    ? 'border-white/[0.08] bg-white/[0.02]'
+                    : 'border-white/[0.04] bg-white/[0.01] text-zinc-600 cursor-not-allowed'
+                }`}
+              >
+                {LANGUAGES.map((lang) => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
             </div>
 
             {/* Service Provider Toggles */}

@@ -109,6 +109,10 @@ interface AgentSettings {
   language: string;
   /** Per-service provider preference: 'direct' (Google OAuth) or 'zapier' */
   serviceProviders?: Record<string, 'direct' | 'zapier'>;
+  /** Translator Skills Mode */
+  translatorMode?: boolean;
+  /** Target language for translator mode */
+  translatorLanguage?: string;
 }
 
 interface GoogleCredentials {
@@ -200,6 +204,8 @@ const DEFAULT_SETTINGS: AgentSettings = {
   // language instead of falling back to English.
   language: getStoredLanguage(),
   serviceProviders: {},
+  translatorMode: false,
+  translatorLanguage: 'English',
 };
 
 const ASSISTANT_ROLE_ALIASES = new Set(['model', 'assistant', 'ai', 'bot', 'agent', 'beatrice']);
@@ -613,6 +619,36 @@ When Boss asks you to translate text into another language, you MUST enter "Tran
 - EXCEPTION: If Boss explicitly asks for a literal vs. natural translation, or asks you to explain something about the translation, ONLY THEN may you add a brief note after the translation — but the translation itself still comes first, with no intro.
 - If Boss says "translate this to French" and gives you text, you output only the French version of that text. If Boss says "translate this to Japanese including the way it speaks it", you output the Japanese text WITH the natural speaking style (casual/honorific/etc.) they asked for.
 - This rule applies to voice, text, and any other modality. Do NOT break character by adding "Boss" or your persona name before or after the translation.
+`;
+
+/**
+ * Builds the translator-only system prompt used when Translator Mode is ON.
+ * This replaces the full persona prompt so the agent behaves strictly as a
+ * translator with no intro, extro, or persona chatter.
+ */
+const buildTranslatorSystemPrompt = (targetLanguage: string): string => `
+[TRANSLATOR MODE — ACTIVE]
+You are a professional translator. You translate text into ${targetLanguage}.
+
+RULES:
+- Output ONLY the translated text. Nothing else.
+- No introductions. No extros. No explanations.
+- No quotation marks around the output.
+- No bullet points, no numbering.
+- No "Boss", no persona name, no greeting, no sign-off.
+- Preserve the meaning, tone, and register of the original text.
+- If the source is informal, translate informally. If formal, translate formally.
+- If Boss asks for a specific dialect or style (e.g., "Flemish Dutch", "Brazilian Portuguese", "honorific Japanese"), use that exact variety.
+
+EXAMPLES:
+Input (Boss): "Good morning, how are you?"
+Output: "Goedemorgen, hoe gaat het?" (if target is Dutch)
+
+Input (Boss): "I love this product!"
+Output: "J'adore ce produit !" (if target is French)
+
+Input (Boss): "Translate to Spanish: Hello my friend"
+Output: "Hola, mi amigo"
 `;
 
 export default function App() {
@@ -1138,13 +1174,12 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
     };
   }, []);
 
-  // Play background audio when session starts
+  // Mute background audio during a live session — prevents acoustic leakage
+  // into the mic and reduces the "too sensitive to background" feedback.
   const playBackgroundAudio = () => {
     if (backgroundAudioRef.current) {
-      backgroundAudioRef.current.muted = false;
-      backgroundAudioRef.current.play().catch(error => {
-        console.log('Background audio autoplay failed:', error);
-      });
+      backgroundAudioRef.current.muted = true;
+      backgroundAudioRef.current.play().catch(() => {});
     }
   };
 
@@ -1694,7 +1729,9 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          systemInstruction: BIBLE_PERSONALITY + "\n\n" + getSystemInstruction(settings.personaName || 'Beatrice', settings.userName || 'Jo Lernout', settings.language || 'English') + "\n\n" + (settings.personality || '') + "\n\n" + historyContext + "\n\n" + buildConnectionContext(settings.userName || 'Jo Lernout', auth.currentUser?.email || '') + "\n\n[CRITICAL: BE BRIEF AND DIRECT]\nYou are a high-performance employee. Be concise, natural, and efficient. Don't over-explain. One or two sentences max for simple responses. Only elaborate when the task requires it. Speak like a busy professional who respects their Boss's time.",
+          systemInstruction: settings.translatorMode
+            ? buildTranslatorSystemPrompt(settings.translatorLanguage || 'English')
+            : BIBLE_PERSONALITY + "\n\n" + getSystemInstruction(settings.personaName || 'Beatrice', settings.userName || 'Jo Lernout', settings.language || 'English') + "\n\n" + (settings.personality || '') + "\n\n" + historyContext + "\n\n" + buildConnectionContext(settings.userName || 'Jo Lernout', auth.currentUser?.email || '') + "\n\n[CRITICAL: BE BRIEF AND DIRECT]\nYou are a high-performance employee. Be concise, natural, and efficient. Don't over-explain. One or two sentences max for simple responses. Only elaborate when the task requires it. Speak like a busy professional who respects their Boss's time.",
           tools: [{
             functionDeclarations: [
                {
@@ -1776,10 +1813,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
           onopen: () => {
              // Reset activity timer
              recordActivity();
-             
-             // Start background audio when session opens
-             playBackgroundAudio();
-             
+
              // Play connection chime to signal AI is alive and ready
              playConnectionChime();
              

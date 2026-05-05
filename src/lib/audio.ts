@@ -1,16 +1,13 @@
 export class AudioStreamer {
   private audioContext: AudioContext | null = null;
   // Track EVERY scheduled source so we can stop them all on interrupt.
-  // The previous design kept only `this.source` (the latest chunk), so
-  // when the user barged in mid-utterance we'd silence the head while
-  // earlier queued buffers kept playing — that's Martijn's "the AI
-  // talks over its previous self" / echo report (#1).
   private activeSources: Set<AudioBufferSourceNode> = new Set();
   private queue: Float32Array[] = [];
   private isPlaying = false;
   private sampleRate = 24000;
   private scheduledTime = 0;
   private analyser: AnalyserNode | null = null;
+  private outputGain: GainNode | null = null;
   private levelRafId: number | null = null;
   private onAiLevel?: (level: number) => void;
 
@@ -19,9 +16,12 @@ export class AudioStreamer {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
       sampleRate,
     });
+    this.outputGain = this.audioContext.createGain();
+    this.outputGain.gain.value = 1.0;
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.7;
+    this.outputGain.connect(this.analyser);
     this.analyser.connect(this.audioContext.destination);
   }
 
@@ -30,6 +30,12 @@ export class AudioStreamer {
     // The level loop now starts/stops with playback (in playNext / stop /
     // playback completion). No more 30Hz interval that runs forever and
     // contributes to phone heat (#2).
+  }
+
+  setVolume(value: number) {
+    if (this.outputGain) {
+      this.outputGain.gain.value = Math.max(0, Math.min(1, value));
+    }
   }
 
   private startLevelLoop() {
@@ -102,7 +108,9 @@ export class AudioStreamer {
 
     const source = this.audioContext.createBufferSource();
     source.buffer = audioBuffer;
-    if (this.analyser) {
+    if (this.outputGain) {
+      source.connect(this.outputGain);
+    } else if (this.analyser) {
       source.connect(this.analyser);
     } else {
       source.connect(this.audioContext.destination);
