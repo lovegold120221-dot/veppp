@@ -107,6 +107,8 @@ interface AgentSettings {
   avatarUrl: string;
   selectedVoice: string;
   language: string;
+  /** Per-service provider preference: 'direct' (Google OAuth) or 'zapier' */
+  serviceProviders?: Record<string, 'direct' | 'zapier'>;
 }
 
 interface GoogleCredentials {
@@ -197,6 +199,7 @@ const DEFAULT_SETTINGS: AgentSettings = {
   // so the very first session in a new profile already speaks Boss's
   // language instead of falling back to English.
   language: getStoredLanguage(),
+  serviceProviders: {},
 };
 
 const ASSISTANT_ROLE_ALIASES = new Set(['model', 'assistant', 'ai', 'bot', 'agent', 'beatrice']);
@@ -760,6 +763,14 @@ export default function App() {
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         localStorage.setItem('googleAccessToken', credential.accessToken);
+        // Persist granted scopes so the connection-context builder can
+        // truthfully tell the model which services are reachable.
+        const grantedScopes = result?.user?.providerData?.find(p => p.providerId === 'google.com')?.uid
+          ? 'https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.compose,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/drive.metadata,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/presentations,https://www.googleapis.com/auth/youtube,https://www.googleapis.com/auth/youtube.upload,https://www.googleapis.com/auth/youtube.readonly,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/tasks,https://www.googleapis.com/auth/contacts,https://www.googleapis.com/auth/contacts.readonly,https://www.googleapis.com/auth/forms,https://www.googleapis.com/auth/forms.body,https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.spaces,https://www.googleapis.com/auth/chat.memberships,https://www.googleapis.com/auth/analytics.readonly,https://www.googleapis.com/auth/analytics,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/cloud-billing,https://www.googleapis.com/auth/firebase,https://www.googleapis.com/auth/sqlservice,https://www.googleapis.com/auth/sqlservice.admin,https://www.googleapis.com/auth/bigquery,https://www.googleapis.com/auth/bigquery.readonly,https://www.googleapis.com/auth/logging.read,https://www.googleapis.com/auth/monitoring,https://www.googleapis.com/auth/monitoring.read,https://www.googleapis.com/auth/trace.append,https://www.googleapis.com/auth/cloudruntimeconfig,https://www.googleapis.com/auth/devstorage.full_control,https://www.googleapis.com/auth/fitness.activity.read,https://www.googleapis.com/auth/fitness.body.read,https://www.googleapis.com/auth/photoslibrary,https://www.googleapis.com/auth/photoslibrary.readonly,https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata'
+          : (credential as any)?.scope || '';
+        if (grantedScopes) {
+          localStorage.setItem('googleAccessTokenScopes', grantedScopes);
+        }
       }
     } catch (error: any) {
       console.error(error);
@@ -1937,17 +1948,61 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                   // can speak it back factually (no hallucination).
                   const resps = await Promise.all(
                     (calls || []).map(async (c: any) => {
-                      // Handle Google Services
-                      if (c.name === 'execute_google_service') {
-                        const { serviceName, action, details, ...rest } = (c.args || {}) as any;
-                        // The tool schema nests email/event/file params under
-                        // `details` (e.g. { to, subject, body }). The executor
-                        // reads them at the top level, so flatten here —
-                        // otherwise sendEmail/createEvent/etc. never see the
-                        // recipient and silently fall through to "list".
-                        const params = { ...rest, ...(details || {}) };
-                        const tid = Math.random().toString(36).substring(7);
-                        setTasks((p) => [...p, { id: tid, serviceName, action, status: 'processing' }]);
+                       // Handle Google Services (direct OAuth or Zapier)
+                       if (c.name === 'execute_google_service') {
+                         const { serviceName, action, details, ...rest } = (c.args || {}) as any;
+                         const params = { ...rest, ...(details || {}) };
+                         const svcKey = (serviceName || '').toLowerCase().replace(/\s+/g, '');
+                         const provider = settings.serviceProviders?.[svcKey] || 'direct';
+
+                         // Route to Zapier if user toggled it for this service
+                         if (provider === 'zapier') {
+                           const tid = Math.random().toString(36).substring(7);
+                           setTasks((p) => [...p, { id: tid, serviceName: `Zapier:${serviceName}`, action, status: 'processing' }]);
+                           try {
+                             sessionRef.current?.sendRealtimeInput?.({
+                               text: `Running that via Zapier now, Boss…`,
+                             });
+                           } catch {}
+                           try {
+                             const { get: rtdbGet, ref: rtdbRef } = await import('firebase/database');
+                             const { rtdb } = await import('./firebase');
+                             const zapierSnap = await rtdbGet(rtdbRef(rtdb, 'platform/config/zapierMcp'));
+                             if (!zapierSnap.exists()) {
+                               return { id: c.id, name: c.name, response: { ok: false, error: 'Zapier not configured' } };
+                             }
+                             const zapierConfig = zapierSnap.val();
+                             if (!zapierConfig.serverUrl) {
+                               return { id: c.id, name: c.name, response: { ok: false, error: 'Zapier MCP URL missing' } };
+                             }
+                             const result = await fetch(`${zapierConfig.serverUrl}/execute`, {
+                               method: 'POST',
+                               headers: { 'Content-Type': 'application/json' },
+                               body: JSON.stringify({
+                                 app: serviceName,
+                                 action,
+                                 data: params || {},
+                               }),
+                             });
+                             if (!result.ok) {
+                               const errText = await result.text().catch(() => 'Unknown error');
+                               throw new Error(`Zapier ${result.status}: ${errText.slice(0, 200)}`);
+                             }
+                             const data = await result.json();
+                             setTasks((p) => p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: 'Done via Zapier' } : t)));
+                             setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+                             return { id: c.id, name: c.name, response: { ok: true, data } };
+                           } catch (err: any) {
+                             const errMsg = err?.message || 'Zapier route failed';
+                             setTasks((p) => p.map((t) => (t.id === tid ? { ...t, status: 'completed', result: `Failed: ${errMsg}` } : t)));
+                             setTimeout(() => setTasks((p) => p.filter((t) => t.id !== tid)), 12000);
+                             return { id: c.id, name: c.name, response: { ok: false, error: errMsg } };
+                           }
+                         }
+
+                         // Default: direct Google OAuth
+                         const tid = Math.random().toString(36).substring(7);
+                         setTasks((p) => [...p, { id: tid, serviceName, action, status: 'processing' }]);
 
                         try {
                           sessionRef.current?.sendRealtimeInput?.({

@@ -11,6 +11,7 @@ interface AgentSettings {
   avatarUrl: string;
   selectedVoice: string;
   language: string;
+  serviceProviders?: Record<string, 'direct' | 'zapier'>;
 }
 
 interface ProfileSettingsProps {
@@ -203,6 +204,71 @@ export default function ProfileSettings({
                 rows={4}
                 placeholder="Any personality preferences or notes..."
               />
+            </div>
+
+            {/* Service Provider Toggles */}
+            <div className="pt-4 border-t border-white/[0.06]">
+              <label className="block text-[12px] font-black uppercase tracking-[0.16em] text-white/60 mb-3">
+                Service Providers
+              </label>
+              <p className="text-[11px] text-zinc-500 mb-3">
+                Choose how each Google service connects. Direct = fast native OAuth. Zapier = broader app coverage (slower).
+              </p>
+              {[
+                { key: 'gmail', label: 'Gmail' },
+                { key: 'drive', label: 'Google Drive' },
+                { key: 'calendar', label: 'Google Calendar' },
+                { key: 'sheets', label: 'Google Sheets' },
+                { key: 'docs', label: 'Google Docs' },
+                { key: 'slides', label: 'Google Slides' },
+                { key: 'tasks', label: 'Google Tasks' },
+                { key: 'contacts', label: 'Google Contacts' },
+                { key: 'youtube', label: 'YouTube' },
+                { key: 'forms', label: 'Google Forms' },
+                { key: 'chat', label: 'Google Chat' },
+                { key: 'analytics', label: 'Google Analytics' },
+                { key: 'photos', label: 'Google Photos' },
+                { key: 'maps', label: 'Google Maps' },
+              ].map(({ key, label }) => {
+                const current = localSettings.serviceProviders?.[key] || 'direct';
+                return (
+                  <div key={key} className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
+                    <span className="text-[13px] text-white/80">{label}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const next = { ...localSettings.serviceProviders, [key]: 'direct' as const };
+                          const newSettings = { ...localSettings, serviceProviders: next };
+                          setLocalSettings(newSettings);
+                          onSettingsChange(newSettings);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all ${
+                          current === 'direct'
+                            ? 'bg-lime-400/20 text-lime-300 border border-lime-400/40'
+                            : 'bg-white/[0.03] text-zinc-500 border border-white/[0.06] hover:text-white/60'
+                        }`}
+                      >
+                        Direct
+                      </button>
+                      <button
+                        onClick={() => {
+                          const next = { ...localSettings.serviceProviders, [key]: 'zapier' as const };
+                          const newSettings = { ...localSettings, serviceProviders: next };
+                          setLocalSettings(newSettings);
+                          onSettingsChange(newSettings);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all ${
+                          current === 'zapier'
+                            ? 'bg-orange-400/20 text-orange-300 border border-orange-400/40'
+                            : 'bg-white/[0.03] text-zinc-500 border border-white/[0.06] hover:text-white/60'
+                        }`}
+                      >
+                        Zapier
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

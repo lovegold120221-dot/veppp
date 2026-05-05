@@ -57,14 +57,13 @@ class GoogleServices {
       // after `signInWithPopup` — this is what the user actually has.)
       try {
         const tok = typeof window !== 'undefined' ? window.localStorage.getItem('googleAccessToken') : null;
+        const scopesRaw = typeof window !== 'undefined' ? window.localStorage.getItem('googleAccessTokenScopes') : null;
+        const scopes = scopesRaw ? scopesRaw.split(',') : [];
         if (tok) {
           this.credentials = {
             accessToken: tok,
-            // Google access tokens normally expire in ~3600s. We don't have
-            // the exact expiry from the popup result, so be generous: assume
-            // 50 min from now and let the 401-retry path handle expiry.
             expiresAt: Date.now() + 50 * 60 * 1000,
-            scopes: [],
+            scopes,
           };
           return true;
         }
