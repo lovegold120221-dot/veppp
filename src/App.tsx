@@ -497,6 +497,12 @@ ${EMOTIONAL_AWARENESS_SYSTEM_PROMPT}
   • "As an AI, I can't…" / "I'm only an AI, so…" / "I'm just a chatbot…"
   • "You'll have to check that yourself" (when it's a Google service Boss has connected)
   • "I don't have the ability to…" (regarding Gmail / Drive / Calendar / etc.)
+  • Any blame on the internet / network / connection. NEVER say "I think the connection is bad", "your internet is acting up", "I need a stable connection", etc. If a tool fails, just say what happened ("That one didn't go through, Boss — let me try again") — do NOT invent infrastructure excuses.
+
+### DEVICE / VOLUME CONTROL — YOU CANNOT TOUCH THE PHONE HARDWARE:
+- You have NO ability to change the phone's media volume, screen brightness, flashlight, Wi-Fi, mobile data, or any other OS-level setting from inside this conversation. Don't pretend you can.
+- If Boss says "speak softer / louder / quieter", "turn the volume down", "lower your voice", etc.: you can SOFTEN your delivery (gentler tone, slower pace, shorter sentences), but you must ALSO tell Boss plainly: "I'll speak softer, Boss — and you can drop the phone's media volume with the side buttons if you want me even quieter." One sentence, no fuss.
+- Same rule for flashlight / Wi-Fi / Bluetooth / SMS — say "That one's a phone-OS toggle, Boss; I can't reach it from here yet" and move on. No fake action, no apology theatre.
 - INSTEAD, when Boss asks for anything in Gmail / Calendar / Drive / Sheets / Docs / Tasks / People / YouTube / Maps:
   1. Immediately call execute_google_service with the right serviceName and a short, plain action.
   2. While it runs, keep talking naturally ("Pulling that up now, Boss…").
@@ -1580,6 +1586,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
              // AI speaks first — brief, natural greeting
              // Slight delay to let chime play first (300ms), then AI speaks
              setTimeout(() => {
+               const lang = settings.language || 'English';
                const recentMsgs = historyMsgs.slice(-8);
                if (recentMsgs.length > 0) {
                  const summary = recentMsgs
@@ -1590,19 +1597,18 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                    `Last time we spoke, this is what was said (most recent at the bottom):\n\n${summary}\n\n` +
                    `Greet ${settings.userName ? 'Boss ' + settings.userName.split(' ')[0] : 'Boss'} naturally and briefly mention where we left off ` +
                    `before asking what's next. Keep it very short — one sentence max. Be brief and natural. ` +
-                   `Example: "Welcome back, Boss. We were just on [topic] — want to keep going?"`;
+                   `RESPOND IN ${lang.toUpperCase()} — this is Boss's preferred language. Do NOT default to English unless ${lang} is English.`;
                  sessionRef.current?.sendMessage?.({ text: recapPrompt });
                } else {
-                 // Fresh session — AI speaks first with brief greeting
-                 const greetings = [
-                   "Hey Boss.",
-                   "Morning Boss.",
-                   "Yeah Boss?",
-                   "What's up Boss?",
-                   "I'm here Boss."
-                 ];
-                 const greeting = greetings[Math.floor(Math.random() * greetings.length)];
-                 sessionRef.current?.sendMessage?.({ text: greeting });
+                 // Fresh session — AI speaks first with a brief greeting in
+                 // Boss's preferred language. Don't hardcode English; the
+                 // model picks an idiomatic short opener for `lang`.
+                 const greetingPrompt =
+                   `[NEW SESSION — FIRST GREETING]\n` +
+                   `Greet Boss${settings.userName ? ' ' + settings.userName.split(' ')[0] : ''} with ONE short, natural opener in ${lang}. ` +
+                   `One sentence, three to six words, like a quiet office aide acknowledging Boss's presence. ` +
+                   `No "How can I help you?" energy. No English fallback unless ${lang} IS English.`;
+                 sessionRef.current?.sendMessage?.({ text: greetingPrompt });
                }
              }, 300);
 
@@ -2017,29 +2023,43 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
   const toggleVideo = async () => {
     if (!isVideoEnabled) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 } });
+        // Capture at 1280x720 — Martijn's feedback was that 320x240 was
+        // too low to OCR text held up to the camera. We compensate for
+        // the larger payload by dropping JPEG quality and slowing the
+        // frame interval so we don't choke the Live socket.
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
-        
+
         // AI responds when video starts
         if (sessionRef.current && isActive) {
           sessionRef.current.sendRealtimeInput({
             text: "Oh, I see you're showing me something! I'm looking at what you're showing me now..."
           });
         }
-        
-        // Start sending video frames to AI
+
+        // Send frames to the Live API. Pace at 2.5s and quality 0.45 —
+        // higher resolution + slower cadence keeps total bandwidth in
+        // line with the old 320x240@1.5s and avoids the "session goes
+        // silent when camera turns on" symptom from the beta feedback.
         videoIntervalRef.current = setInterval(() => {
           if (videoRef.current && sessionRef.current) {
             const v = videoRef.current;
+            if (!v.videoWidth || !v.videoHeight) return;
             const canvas = document.createElement('canvas');
             canvas.width = v.videoWidth;
             canvas.height = v.videoHeight;
             const ctx = canvas.getContext('2d');
             if (ctx) {
               ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-              const base64Url = canvas.toDataURL('image/jpeg', 0.5);
+              const base64Url = canvas.toDataURL('image/jpeg', 0.45);
               const base64Data = base64Url.split(',')[1];
               if (base64Data) {
                 sessionRef.current.sendRealtimeInput({
@@ -2048,7 +2068,7 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
               }
             }
           }
-        }, 1500); // 1.5 seconds per frame is safe for Live API to process
+        }, 2500);
         
         setIsVideoEnabled(true);
       } catch (e) {

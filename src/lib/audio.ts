@@ -141,10 +141,15 @@ export class AudioRecorder {
     // Prefer the default microphone or first available microphone
     const preferredDevice = microphones.find(d => d.label.toLowerCase().includes('default') || d.label.toLowerCase().includes('built-in') || d.label.toLowerCase().includes('internal')) || microphones[0];
     
+    // Strict required constraints (not `ideal`) — Martijn's beta feedback
+    // flagged the agent triggering on background noise. `ideal` lets the
+    // browser silently drop them on devices that claim partial support;
+    // requiring them forces the OS DSP path on Chrome/Safari mobile and
+    // cuts down the chatter that was reaching the model.
     const audioConstraints: MediaTrackConstraints = {
-      echoCancellation: { ideal: true },
-      noiseSuppression: { ideal: true },
-      autoGainControl: { ideal: false }, // Disable AGC for cleaner audio
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: false, // AGC chases background noise upward; keep off.
       sampleRate: { ideal: 16000 },
       channelCount: { ideal: 1 }, // Mono for speech recognition
       // Explicitly request microphone, not system audio
