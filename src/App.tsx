@@ -61,6 +61,9 @@ import {
   Code2,
   Paperclip,
   FileText,
+  VolumeX,
+  Volume1,
+  Volume2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import ArtifactPreview, { ArtifactData, ArtifactType } from './components/ArtifactPreview';
@@ -1148,50 +1151,8 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   const [audioLevel, setAudioLevel] = useState(0);
   const [aiAudioLevel, setAiAudioLevel] = useState(0);
   const [hideOrb, setHideOrb] = useState(false); // Hide orb when displaying content
+  const [aiVolume, setAiVolume] = useState(1.0); // AI voice volume 0-1
   
-  // Background audio
-  const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Initialize background audio
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const audio = new Audio('/bg/freesound_community-office-ambience-24734.mp3');
-      audio.loop = true;
-      audio.volume = 0.1; // 10% volume
-      audio.muted = true; // Start muted to prevent feedback
-      backgroundAudioRef.current = audio;
-      
-      // Prevent audio from being captured by microphone
-      audio.setAttribute('playsinline', '');
-      audio.setAttribute('webkit-playsinline', '');
-    }
-    
-    return () => {
-      if (backgroundAudioRef.current) {
-        backgroundAudioRef.current.pause();
-        backgroundAudioRef.current = null;
-      }
-    };
-  }, []);
-
-  // Mute background audio during a live session — prevents acoustic leakage
-  // into the mic and reduces the "too sensitive to background" feedback.
-  const playBackgroundAudio = () => {
-    if (backgroundAudioRef.current) {
-      backgroundAudioRef.current.muted = true;
-      backgroundAudioRef.current.play().catch(() => {});
-    }
-  };
-
-  // Stop background audio when session ends
-  const stopBackgroundAudio = () => {
-    if (backgroundAudioRef.current) {
-      backgroundAudioRef.current.muted = true;
-      backgroundAudioRef.current.pause();
-      backgroundAudioRef.current.currentTime = 0;
-    }
-  };
-
   // Connection chime audio - plays when AI is fully connected and alive
   const chimeAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -1315,6 +1276,11 @@ function AoedeAgent({ user, onLogout, initialSettings }: { user: User, onLogout:
   useEffect(() => {
     isAgentSpeakingRef.current = isAgentSpeaking;
   }, [isAgentSpeaking]);
+
+  useEffect(() => {
+    // Sync AI voice volume to AudioStreamer
+    audioStreamerRef.current?.setVolume(aiVolume);
+  }, [aiVolume]);
 
   useEffect(() => {
     // Wake Lock
@@ -2542,9 +2508,6 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
     setIsActive(false);
     setConnecting(false);
     setCurrentTranscript(null);
-    
-    // Stop background audio when session ends
-    stopBackgroundAudio();
   };
 
   // Real-time amplitude (0..1) driving every visualizer. Switches source on
@@ -2770,6 +2733,39 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                  </div>
                </button>
              )}
+
+             {/* Volume Button with Popover Slider */}
+             <div className="relative group">
+               <button
+                 className={`flex h-11 w-11 items-center justify-center rounded-full border bg-black/65 transition-all ${
+                   aiVolume < 0.3
+                     ? 'border-zinc-500/35 text-zinc-400'
+                     : 'border-lime-300/30 text-lime-300/85 hover:border-lime-300/55 hover:text-lime-200'
+                 }`}
+                 aria-label={`AI voice volume: ${Math.round(aiVolume * 100)}%`}
+                 title={`AI voice volume: ${Math.round(aiVolume * 100)}%`}
+               >
+                 {aiVolume < 0.1 ? <VolumeX className="h-[18px] w-[18px]" /> : aiVolume < 0.5 ? <Volume1 className="h-[18px] w-[18px]" /> : <Volume2 className="h-[18px] w-[18px]" />}
+               </button>
+               {/* Volume Slider Popover */}
+               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+                 <div className="flex flex-col items-center gap-2 p-3 rounded-xl border border-lime-300/20 bg-black/90 shadow-lg">
+                   <span className="text-[10px] text-lime-300/70 uppercase tracking-wider">AI Voice</span>
+                   <input
+                     type="range"
+                     min="0"
+                     max="1"
+                     step="0.1"
+                     value={aiVolume}
+                     onChange={(e) => setAiVolume(parseFloat(e.target.value))}
+                     className="w-24 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-lime-400"
+                     aria-label="AI voice volume level"
+                     title="Adjust AI voice volume"
+                   />
+                   <span className="text-[10px] text-zinc-400">{Math.round(aiVolume * 100)}%</span>
+                 </div>
+               </div>
+             </div>
 
              {/* Right: Video Button */}
              <button
