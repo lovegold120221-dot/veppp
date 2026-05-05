@@ -20,5 +20,22 @@ No dedicated `npm test` script is currently wired. Before submitting changes, ru
 ## Commit & Pull Request Guidelines
 Recent history uses Conventional Commit-style prefixes such as `feat:` and `fix:`. Keep messages imperative and specific, for example `fix: prevent duplicate live audio on camera open`. PRs should include a short summary, validation commands run, linked issue or task, screenshots for UI changes, and notes for any Firebase rules, env vars, or API behavior changes.
 
+## Git & Shipping Workflows
+This project can use the following gstack skills for git operations and deployment. Invoke them proactively when appropriate:
+- `/ship` — prepare, review, bump version, and open a PR. Use when code is ready to push.
+- `/land-and-deploy` — merge a PR, wait for CI/deploy, and verify production health via canary checks. Use after a PR is approved.
+- `/review` — pre-landing PR review focusing on SQL safety, LLM trust boundaries, side effects, and structural issues.
+- `/canary` — post-deploy monitoring for console errors and performance regressions.
+- `/setup-deploy` — detect and record the deployment platform and health-check endpoints into `AGENTS.md`.
+- `/benchmark` — track page load times, Core Web Vitals, and bundle size trends.
+- `/qa` or `/qa-only` — run QA testing against the built or live site; `/qa` also fixes bugs.
+- `/browse` — open a headless browser to test flows, take screenshots, and verify deployments.
+- `/screenshot` — capture the app or a specific URL with native OS tools.
+- `/careful` — enable safety guardrails around destructive commands (`rm -rf`, `git reset --hard`, etc.).
+- `/freeze <path>` — restrict file edits to a directory to avoid accidental changes elsewhere.
+- `/unfreeze` — remove the edit freeze.
+- `/guard` — enable both `/careful` and `/freeze` for maximum safety.
+- `/document-release` — sync README/CHANGELOG/AGENTS.md after a PR ships.
+
 ## Security & Configuration Tips
 Keep real secrets out of committed files. Configure local keys in `.env.local` using the README variables such as `GEMINI_API_KEY`, `VITE_GEMINI_API_KEY`, `VITE_GOOGLE_API_KEY`, and `VITE_ZAPIER_MCP_EMBED_ID`. Do not print secrets in logs, and review Firebase rule changes together with any database or auth code changes.
