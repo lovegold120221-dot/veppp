@@ -3324,6 +3324,21 @@ Then briefly summarize what is verifiably in the file. Nothing more.`;
                 }}
                 className="flex h-14 items-center gap-2 rounded-[20px] border border-lime-300/20 bg-black px-2.5"
               >
+                {/* Video Toggle — inside the chatbox for real-time Gemini Live WebSDK capture */}
+                <button
+                  type="button"
+                  onClick={toggleVideo}
+                  className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] border transition-colors ${
+                    isVideoEnabled
+                      ? 'border-blue-400/40 bg-blue-400/10 text-blue-300'
+                      : 'border-lime-300/30 bg-lime-300/[0.05] text-lime-300/85 hover:border-lime-300/55 hover:text-lime-200'
+                  }`}
+                  aria-label={isVideoEnabled ? 'Stop video' : 'Start video'}
+                  title={isVideoEnabled ? 'Stop real-time video capture' : 'Start real-time video capture for Gemini Live'}
+                >
+                  {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+                </button>
+
                 {/* Attachment Button */}
                 <label className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center rounded-[14px] border border-lime-300/30 bg-lime-300/[0.05] text-lime-300/85 transition-colors hover:border-lime-300/55 hover:text-lime-200">
                   <Paperclip className="h-5 w-5" />

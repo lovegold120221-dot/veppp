@@ -160,77 +160,77 @@ export default function ChatInterface({
         </div>
       )}
 
-      {/* Chat Input */}
+      {/* Chat Input + Video + Session Controls in one bar */}
       <div className="border-t border-white/10 bg-black/50 px-4 py-4">
-        <form onSubmit={onSubmitChat} className="flex gap-2">
-          <input
-            type="text"
-            value={chatInput}
-            onChange={(e) => onChatInputChange(e.target.value)}
-            placeholder={isActive ? "Type or speak your message..." : "Type your message..."}
-            className="flex-1 rounded-full bg-white/10 border border-white/20 px-4 py-2 text-white placeholder-white/50 focus:outline-none focus:border-lime-400/50"
-          />
+        <div className="flex items-center gap-2 max-w-4xl mx-auto">
+          {/* Video Toggle — inside the chatbox, next to the text input */}
           <button
-            type="submit"
-            disabled={!chatInput.trim()}
-            title="Send message"
-            aria-label="Send message"
-            className="p-2 rounded-full bg-lime-500 text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lime-400 transition-colors"
+            onClick={onToggleVideo}
+            title={isVideoEnabled ? 'Stop video' : 'Start video'}
+            aria-label={isVideoEnabled ? 'Stop video' : 'Start video'}
+            className={`shrink-0 p-2.5 rounded-full transition-colors ${
+              isVideoEnabled
+                ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                : 'bg-white/10 text-white hover:bg-white/20'
+            }`}
           >
-            <Send className="h-4 w-4" />
+            {isVideoEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
           </button>
-        </form>
-      </div>
 
-      {/* Control Buttons */}
-      <div className="border-t border-white/10 bg-black/50 px-4 py-4">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
-          <div className="flex items-center gap-2">
-            {/* Start/Stop Session */}
-            {!isActive ? (
-              <button
-                onClick={onStartSession}
-                className="px-4 py-2 rounded-full bg-lime-500 text-black font-medium hover:bg-lime-400 transition-colors"
-              >
-                Start Session
-              </button>
-            ) : (
-              <button
-                onClick={onStopSession}
-                className="px-4 py-2 rounded-full bg-red-500 text-white font-medium hover:bg-red-400 transition-colors"
-              >
-                <Square className="h-4 w-4 inline mr-1" />
-                Stop Session
-              </button>
-            )}
-
-            {/* Mute Toggle */}
+          {/* Text Input */}
+          <form onSubmit={onSubmitChat} className="flex-1 flex gap-2">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => onChatInputChange(e.target.value)}
+              placeholder={isActive ? "Type or speak your message..." : "Type your message..."}
+              className="flex-1 rounded-full bg-white/10 border border-white/20 px-4 py-2 text-white placeholder-white/50 focus:outline-none focus:border-lime-400/50"
+            />
             <button
-              onClick={onToggleMute}
-              className={`p-2 rounded-full transition-colors ${
-                isMuted
-                  ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                  : 'bg-white/10 text-white hover:bg-white/20'
-              }`}
+              type="submit"
+              disabled={!chatInput.trim()}
+              title="Send message"
+              aria-label="Send message"
+              className="p-2 rounded-full bg-lime-500 text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lime-400 transition-colors"
             >
-              {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              <Send className="h-4 w-4" />
             </button>
+          </form>
 
-            {/* Video Toggle */}
+          {/* Mute Toggle */}
+          <button
+            onClick={onToggleMute}
+            title={isMuted ? 'Unmute' : 'Mute'}
+            aria-label={isMuted ? 'Unmute' : 'Mute'}
+            className={`shrink-0 p-2.5 rounded-full transition-colors ${
+              isMuted
+                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                : 'bg-white/10 text-white hover:bg-white/20'
+            }`}
+          >
+            {isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </button>
+
+          {/* Start/Stop Session */}
+          {!isActive ? (
             <button
-              onClick={onToggleVideo}
-              className={`p-2 rounded-full transition-colors ${
-                isVideoEnabled
-                  ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                  : 'bg-white/10 text-white hover:bg-white/20'
-              }`}
+              onClick={onStartSession}
+              className="shrink-0 px-4 py-2 rounded-full bg-lime-500 text-black font-medium hover:bg-lime-400 transition-colors"
             >
-              {isVideoEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+              Start
             </button>
-          </div>
+          ) : (
+            <button
+              onClick={onStopSession}
+              className="shrink-0 px-4 py-2 rounded-full bg-red-500 text-white font-medium hover:bg-red-400 transition-colors"
+            >
+              <Square className="h-4 w-4 inline mr-1" />
+              Stop
+            </button>
+          )}
 
           {/* Status Indicator */}
-          <div className="flex items-center gap-2">
+          <div className="shrink-0 flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${
               isActive ? 'bg-lime-400 animate-pulse' : 'bg-white/30'
             }`} />
